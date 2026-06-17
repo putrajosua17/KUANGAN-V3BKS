@@ -98,6 +98,9 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
   const modalOpenRef = useRef(false);
@@ -409,7 +412,7 @@ export default function App() {
   const promoBreakdown = useMemo(() => {
     const map = {};
     periodTransactions.forEach((t) => {
-      if (t.type !== "income" || !t.promo) return;
+      if (t.type !== "income" || t.category !== "Rental" || !t.promo) return;
       if (!map[t.promo]) map[t.promo] = { promo: t.promo, count: 0, amount: 0, clients: new Set() };
       map[t.promo].count += 1;
       map[t.promo].amount += t.amount;
@@ -417,7 +420,7 @@ export default function App() {
     });
     return Object.values(map)
       .map((p) => ({ ...p, clients: Array.from(p.clients) }))
-      .sort((a, b) => b.amount - a.amount);
+      .sort((a, b) => b.count - a.count);
   }, [periodTransactions]);
 
   const periodPrive = useMemo(
@@ -442,7 +445,7 @@ export default function App() {
   const topClients = useMemo(() => {
     const map = {};
     periodTransactions.forEach((t) => {
-      if (t.type !== "income") return;
+      if (t.type !== "income" || t.category !== "Rental") return;
       const key = (t.entity || "").trim();
       if (!key) return;
       const normKey = key.toLowerCase();
@@ -450,7 +453,7 @@ export default function App() {
       map[normKey].total += t.amount;
       map[normKey].count += 1;
     });
-    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 8);
+    return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 8);
   }, [periodTransactions]);
 
   const openItems = useMemo(() => {
@@ -468,11 +471,11 @@ export default function App() {
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((t) => {
-        const d = new Date(t.date);
-        if (d.getFullYear() !== selectedYear) return false;
-        if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+        if (dateFrom && t.date < dateFrom) return false;
+        if (dateTo && t.date > dateTo) return false;
         if (filterType !== "all" && t.type !== filterType) return false;
         if (filterStatus !== "all" && t.status !== filterStatus) return false;
+        if (filterCategory !== "all" && t.category !== filterCategory) return false;
         if (searchTerm) {
           const splitMethods = t.splits && t.splits.length ? t.splits.map((s) => s.method).join(" ") : "";
           const hay = `${t.category || ""} ${t.entity || ""} ${t.note || ""} ${t.method || ""} ${t.fromMethod || ""} ${t.toMethod || ""} ${t.recordedBy || ""} ${t.promo || ""} ${splitMethods}`.toLowerCase();
@@ -481,7 +484,22 @@ export default function App() {
         return true;
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  }, [transactions, selectedYear, selectedMonth, filterType, filterStatus, searchTerm]);
+  }, [transactions, dateFrom, dateTo, filterType, filterStatus, filterCategory, searchTerm]);
+
+  const allCategories = useMemo(
+    () => Array.from(new Set([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES])),
+    []
+  );
+
+  const hasActiveFilters = dateFrom || dateTo || filterType !== "all" || filterStatus !== "all" || filterCategory !== "all" || searchTerm;
+  const resetFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setFilterType("all");
+    setFilterStatus("all");
+    setFilterCategory("all");
+    setSearchTerm("");
+  };
 
   if (!loaded) {
     return (
@@ -892,20 +910,17 @@ export default function App() {
         <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.4rem" }}>
           <div className="flex items-center gap-1.5" style={{ marginBottom: "0.7rem" }}>
             <Tag size={14} style={{ color: "#C9A227" }} />
-            <p className="v3-display" style={{ fontSize: "0.88rem", fontWeight: 600, letterSpacing: "0.02em" }}>Riwayat Penggunaan Promo</p>
+            <p className="v3-display" style={{ fontSize: "0.88rem", fontWeight: 600, letterSpacing: "0.02em" }}>Riwayat Penggunaan Promo (Rental)</p>
           </div>
           {promoBreakdown.length === 0 ? (
             <p className="v3-muted" style={{ fontSize: "0.78rem" }}>
-              Belum ada transaksi dengan promo tercatat untuk periode ini. Isi "Promo yang dipakai" saat tambah transaksi Income.
+              Belum ada transaksi Rental dengan promo tercatat untuk periode ini. Isi "Promo yang dipakai" saat tambah transaksi Income kategori Rental.
             </p>
           ) : (
             <div className="flex flex-col gap-1.5">
               {promoBreakdown.map((p) => (
                 <div key={p.promo} className="v3-surface-alt" style={{ borderRadius: 10, padding: "0.55rem 0.75rem" }}>
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{p.promo}</span>
-                    <span className="v3-mono v3-gold" style={{ fontSize: "0.82rem", fontWeight: 700 }}>{formatRupiah(p.amount)}</span>
-                  </div>
+                  <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{p.promo}</span>
                   <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.15rem" }}>
                     {p.count} transaksi{p.clients.length ? " · " + p.clients.join(", ") : ""}
                   </p>
@@ -919,12 +934,12 @@ export default function App() {
           <div className="flex items-center gap-1.5" style={{ marginBottom: "0.7rem" }}>
             <Trophy size={15} className="v3-gold" />
             <p className="v3-display" style={{ fontSize: "0.95rem", fontWeight: 600, letterSpacing: "0.03em" }}>
-              Top Klien {selectedMonth !== null ? MONTHS[selectedMonth] : ""} {selectedYear}
+              Top Klien Rental {selectedMonth !== null ? MONTHS[selectedMonth] : ""} {selectedYear}
             </p>
           </div>
           {topClients.length === 0 ? (
             <p className="v3-muted" style={{ fontSize: "0.8rem" }}>
-              Belum ada transaksi dengan nama klien untuk periode ini.
+              Belum ada transaksi Rental dengan nama klien untuk periode ini.
             </p>
           ) : (
             <div className="flex flex-col gap-1.5">
@@ -942,9 +957,6 @@ export default function App() {
                       <p style={{ fontSize: "0.82rem", fontWeight: 600 }}>{c.name}</p>
                       <p className="v3-muted" style={{ fontSize: "0.68rem" }}>{c.count} transaksi</p>
                     </div>
-                    <p className="v3-mono v3-green" style={{ fontSize: "0.85rem", fontWeight: 700, flexShrink: 0 }}>
-                      {formatRupiah(c.total)}
-                    </p>
                   </div>
                 );
               })}
@@ -958,8 +970,8 @@ export default function App() {
         {activeTab === "transaksi" && (
           <>
         {/* Filters */}
-        <div className="flex flex-col md:flex-row md:items-center gap-2" style={{ marginBottom: "0.8rem" }}>
-          <div className="v3-input flex items-center gap-2" style={{ borderRadius: 10, padding: "0.5rem 0.7rem", flex: 1 }}>
+        <div className="v3-surface" style={{ borderRadius: 14, padding: "0.8rem 0.9rem", marginBottom: "0.9rem" }}>
+          <div className="v3-input flex items-center gap-2" style={{ borderRadius: 10, padding: "0.5rem 0.7rem", marginBottom: "0.6rem" }}>
             <Search size={14} className="v3-muted" />
             <input
               value={searchTerm}
@@ -968,7 +980,44 @@ export default function App() {
               style={{ background: "transparent", border: "none", outline: "none", color: "#F2EFE9", fontSize: "0.85rem", width: "100%" }}
             />
           </div>
-          <div className="v3-scroll flex gap-1.5" style={{ overflowX: "auto" }}>
+
+          <div className="grid grid-cols-2 gap-2" style={{ marginBottom: "0.6rem" }}>
+            <div>
+              <span className="v3-muted" style={{ fontSize: "0.68rem", display: "block", marginBottom: "0.2rem" }}>Dari Tanggal</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="v3-input"
+                style={{ borderRadius: 8, padding: "0.45rem 0.5rem", width: "100%", fontSize: "0.8rem" }}
+              />
+            </div>
+            <div>
+              <span className="v3-muted" style={{ fontSize: "0.68rem", display: "block", marginBottom: "0.2rem" }}>Sampai Tanggal</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="v3-input"
+                style={{ borderRadius: 8, padding: "0.45rem 0.5rem", width: "100%", fontSize: "0.8rem" }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "0.6rem" }}>
+            <span className="v3-muted" style={{ fontSize: "0.68rem", display: "block", marginBottom: "0.2rem" }}>Kategori</span>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.45rem 0.5rem", width: "100%", fontSize: "0.8rem" }}
+            >
+              <option value="all">Semua Kategori</option>
+              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="v3-scroll flex gap-1.5" style={{ overflowX: "auto", marginBottom: "0.5rem" }}>
             {[["all", "Semua"], ["income", "Income"], ["expense", "Expense"], ["transfer", "Transfer"], ["prive", "Prive"]].map(([val, label]) => (
               <button
                 key={val}
@@ -980,30 +1029,30 @@ export default function App() {
               </button>
             ))}
           </div>
-        </div>
 
-        <div className="v3-scroll flex gap-1.5" style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
-          {[["all", "Semua Status"], ["Lunas", "Lunas"], ["DP", "DP"], ["Belum Lunas", "Belum Lunas"]].map(([val, label]) => (
+          <div className="v3-scroll flex gap-1.5" style={{ overflowX: "auto" }}>
+            {[["all", "Semua Status"], ["Lunas", "Lunas"], ["DP", "DP"], ["Belum Lunas", "Belum Lunas"]].map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setFilterStatus(val)}
+                className={filterStatus === val ? "v3-gold-bg" : "v3-surface-alt v3-muted"}
+                style={{ borderRadius: 999, padding: "0.35rem 0.7rem", fontSize: "0.72rem", fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {hasActiveFilters && (
             <button
-              key={val}
-              onClick={() => setFilterStatus(val)}
-              className={filterStatus === val ? "v3-gold-bg" : "v3-surface-alt v3-muted"}
-              style={{ borderRadius: 999, padding: "0.35rem 0.7rem", fontSize: "0.72rem", fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}
+              onClick={resetFilters}
+              className="v3-muted flex items-center gap-1"
+              style={{ fontSize: "0.75rem", marginTop: "0.6rem" }}
             >
-              {label}
+              <X size={12} /> Reset semua filter
             </button>
-          ))}
+          )}
         </div>
-
-        {selectedMonth !== null && (
-          <button
-            onClick={() => setSelectedMonth(null)}
-            className="v3-muted flex items-center gap-1"
-            style={{ fontSize: "0.78rem", marginBottom: "0.6rem" }}
-          >
-            Menampilkan {MONTHS[selectedMonth]} {selectedYear} saja <X size={12} />
-          </button>
-        )}
 
         {/* Transaction list */}
         <div className="flex flex-col gap-2">
