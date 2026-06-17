@@ -361,6 +361,27 @@ export default function App() {
   );
   const taxEstimate = periodIncome * 0.005;
 
+  const periodRentalIncome = useMemo(
+    () =>
+      periodTransactions
+        .filter((t) => t.type === "income" && t.category === "Rental")
+        .reduce((sum, t) => sum + t.amount, 0),
+    [periodTransactions]
+  );
+  const taxDaerahEstimate = periodRentalIncome * 0.1;
+
+  const durationBreakdown = useMemo(() => {
+    const map = {};
+    periodTransactions.forEach((t) => {
+      if (t.type !== "income" || !t.duration) return;
+      const key = t.duration;
+      if (!map[key]) map[key] = { duration: key, count: 0, amount: 0 };
+      map[key].count += 1;
+      map[key].amount += t.amount;
+    });
+    return Object.values(map).sort((a, b) => a.duration - b.duration);
+  }, [periodTransactions]);
+
   const periodPrive = useMemo(
     () => periodTransactions.filter((t) => t.type === "prive").reduce((sum, t) => sum + t.amount, 0),
     [periodTransactions]
@@ -709,6 +730,12 @@ export default function App() {
               <span className="v3-mono v3-gold" style={{ fontWeight: 600 }}>{formatRupiah(taxEstimate)}</span>
             </div>
           )}
+          {periodRentalIncome > 0 && (
+            <div className="v3-surface-alt" style={{ borderRadius: 999, padding: "0.4rem 0.85rem", fontSize: "0.75rem" }}>
+              <span className="v3-muted">Estimasi Pajak Daerah 10%: </span>
+              <span className="v3-mono v3-gold" style={{ fontWeight: 600 }}>{formatRupiah(taxDaerahEstimate)}</span>
+            </div>
+          )}
           {periodPrive > 0 && (
             <div className="v3-surface-alt" style={{ borderRadius: 999, padding: "0.4rem 0.85rem", fontSize: "0.75rem" }}>
               <span className="v3-muted">Prive/Dividen: </span>
@@ -717,9 +744,10 @@ export default function App() {
           )}
         </div>
 
-        {periodIncome > 0 && (
+        {(periodIncome > 0 || periodRentalIncome > 0) && (
           <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "-0.4rem", marginBottom: "0.8rem" }}>
-            Estimasi dari 0,5% omzet (PP 23/2018), bukan nasihat pajak resmi — konsultasikan ke konsultan pajak untuk perhitungan final.
+            PPh Final dari 0,5% total omzet (PP 23/2018), Pajak Daerah dari 10% income kategori Rental — keduanya estimasi,
+            bukan nasihat pajak resmi. Konsultasikan ke konsultan pajak untuk perhitungan final.
           </p>
         )}
 
@@ -760,6 +788,35 @@ export default function App() {
             data={categoryBreakdown.expense}
             accent="#D1574A"
           />
+        </div>
+
+        <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.4rem" }}>
+          <div className="flex items-center gap-1.5" style={{ marginBottom: "0.7rem" }}>
+            <BarChart3 size={14} style={{ color: "#C9A227" }} />
+            <p className="v3-display" style={{ fontSize: "0.88rem", fontWeight: 600, letterSpacing: "0.02em" }}>Durasi Bermain</p>
+          </div>
+          {durationBreakdown.length === 0 ? (
+            <p className="v3-muted" style={{ fontSize: "0.78rem" }}>
+              Belum ada transaksi dengan durasi tercatat untuk periode ini. Isi "Durasi Bermain" saat tambah transaksi Income.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {(() => {
+                const maxCount = Math.max(1, ...durationBreakdown.map((d) => d.count));
+                return durationBreakdown.map((d) => (
+                  <div key={d.duration}>
+                    <div className="flex items-center justify-between" style={{ marginBottom: "0.25rem" }}>
+                      <span style={{ fontSize: "0.78rem" }}>{d.duration} Jam</span>
+                      <span className="v3-mono v3-muted" style={{ fontSize: "0.72rem" }}>{d.count} booking · {formatRupiah(d.amount)}</span>
+                    </div>
+                    <div style={{ height: 5, background: "rgba(255,255,255,0.07)", borderRadius: 3 }}>
+                      <div style={{ height: 5, width: (d.count / maxCount) * 100 + "%", background: "#C9A227", borderRadius: 3 }} />
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.4rem" }}>
@@ -1034,7 +1091,7 @@ function TransactionRow({ tx, onEdit, onDelete }) {
           )}
         </div>
         <p className="v3-muted" style={{ fontSize: "0.72rem" }}>
-          {tx.date}{tx.entity ? " · " + tx.entity : ""}{!isTransfer ? " · " + tx.method : ""}{tx.recordedBy ? " · oleh " + tx.recordedBy : ""}
+          {tx.date}{tx.entity ? " · " + tx.entity : ""}{!isTransfer ? " · " + tx.method : ""}{tx.duration ? " · " + tx.duration + " Jam" : ""}{tx.recordedBy ? " · oleh " + tx.recordedBy : ""}
         </p>
         {tx.note && <p className="v3-muted" style={{ fontSize: "0.72rem", fontStyle: "italic" }}>{tx.note}</p>}
       </div>
@@ -1061,6 +1118,7 @@ function TransactionModal({ editingTx, onSave, onClose }) {
   const [toMethod, setToMethod] = useState(editingTx?.toMethod || METHODS[1]);
   const [amount, setAmount] = useState(editingTx?.amount ? String(editingTx.amount) : "");
   const [entity, setEntity] = useState(editingTx?.entity || "");
+  const [duration, setDuration] = useState(editingTx?.duration ? String(editingTx.duration) : "");
   const [note, setNote] = useState(editingTx?.note || "");
   const [recordedBy, setRecordedBy] = useState(editingTx?.recordedBy || "");
   const [touched, setTouched] = useState(false);
@@ -1097,7 +1155,10 @@ function TransactionModal({ editingTx, onSave, onClose }) {
     let tx;
     if (type === "transfer") tx = { ...base, fromMethod, toMethod };
     else if (type === "prive") tx = { ...base, method };
-    else tx = { ...base, category, method, status, entity: entity.trim() };
+    else {
+      const durationNum = parseFloat(duration);
+      tx = { ...base, category, method, status, entity: entity.trim(), duration: durationNum > 0 ? durationNum : null };
+    }
     if (recordedBy.trim()) {
       window.storage.set("v3bks_last_recorder_name", recordedBy.trim(), false).catch(() => {});
     }
@@ -1163,6 +1224,19 @@ function TransactionModal({ editingTx, onSave, onClose }) {
               <Field label="Nama Klien / Entitas (opsional)">
                 <input value={entity} onChange={(e) => setEntity(e.target.value)} placeholder="cth. Indofams FC" className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }} />
               </Field>
+              {type === "income" && (
+                <Field label="Durasi Bermain (Jam, opsional)">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    placeholder="cth. 2"
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+                  />
+                </Field>
+              )}
             </>
           ) : type === "prive" ? (
             <>
