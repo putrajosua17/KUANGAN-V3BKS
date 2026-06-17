@@ -262,27 +262,32 @@ export default function App() {
     return Array.from(set).sort((a, b) => b - a);
   }, [transactions]);
 
-  const balances = useMemo(() => {
-    const bal = { ...initialBalances };
-    transactions.forEach((t) => {
-      if (t.type === "income") {
-        if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) + s.amount; });
-        else bal[t.method] = (bal[t.method] || 0) + t.amount;
-      } else if (t.type === "expense" || t.type === "prive") {
-        if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) - s.amount; });
-        else bal[t.method] = (bal[t.method] || 0) - t.amount;
-      } else if (t.type === "transfer") {
-        bal[t.fromMethod] = (bal[t.fromMethod] || 0) - t.amount;
-        bal[t.toMethod] = (bal[t.toMethod] || 0) + t.amount;
-      }
-    });
-    return bal;
-  }, [transactions, initialBalances]);
+  const dashboardAsOfDate = useMemo(() => {
+    const now = new Date();
+    if (selectedMonth !== null) {
+      const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+      return `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    }
+    if (selectedYear === now.getFullYear()) return todayISO();
+    return `${selectedYear}-12-31`;
+  }, [selectedYear, selectedMonth]);
+
+  const balances = useMemo(
+    () => computeBalanceAsOf(transactions, initialBalances, dashboardAsOfDate),
+    [transactions, initialBalances, dashboardAsOfDate]
+  );
 
   const totalSaldo = useMemo(
     () => METHODS.reduce((sum, m) => sum + (balances[m] || 0), 0),
     [balances]
   );
+
+  const initialBalancesTotal = useMemo(
+    () => METHODS.reduce((sum, m) => sum + (initialBalances[m] || 0), 0),
+    [initialBalances]
+  );
+
+  const saldoBersih = totalSaldo - initialBalancesTotal;
 
   const monthlyData = useMemo(() => {
     const rows = MONTHS.map((label, idx) => ({ idx, label, income: 0, expense: 0 }));
@@ -553,15 +558,46 @@ export default function App() {
       <div className="px-4 py-5 md:px-6" style={{ maxWidth: 1100, margin: "0 auto" }}>
         {activeTab === "dashboard" && (
           <>
+        {/* Pilih Periode */}
+        <div className="flex items-center justify-between" style={{ marginBottom: "0.6rem" }}>
+          <p className="v3-muted" style={{ fontSize: "0.72rem" }}>Lihat saldo per periode</p>
+          <div className="flex gap-1.5">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.35rem 0.5rem", fontSize: "0.78rem" }}
+            >
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select
+              value={selectedMonth === null ? "all" : selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value === "all" ? null : Number(e.target.value))}
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.35rem 0.5rem", fontSize: "0.78rem" }}
+            >
+              <option value="all">Saat Ini</option>
+              {MONTHS.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+
         {/* Total saldo */}
         <div className="v3-surface" style={{ borderRadius: 18, padding: "1.25rem 1.4rem", marginBottom: "0.9rem" }}>
           <p className="v3-muted" style={{ fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            Total Saldo Real
+            Total Saldo Real{selectedMonth !== null ? " · " + MONTHS[selectedMonth] + " " + selectedYear : ""}
           </p>
           <p className="v3-mono v3-gold" style={{ fontSize: "2rem", fontWeight: 600, marginTop: "0.2rem" }}>
             {formatRupiah(totalSaldo)}
           </p>
-          <p className="v3-muted" style={{ fontSize: "0.72rem", marginTop: "0.3rem" }}>
+          <div style={{ height: 1, background: "rgba(201,162,39,0.15)", margin: "0.6rem 0" }} />
+          <p className="v3-muted" style={{ fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            Saldo Bersih (Saldo Real &minus; Modal Awal)
+          </p>
+          <p className={"v3-mono " + (saldoBersih >= 0 ? "v3-green" : "v3-red")} style={{ fontSize: "1.3rem", fontWeight: 600, marginTop: "0.15rem" }}>
+            {formatRupiah(saldoBersih)}
+          </p>
+          <p className="v3-muted" style={{ fontSize: "0.72rem", marginTop: "0.5rem" }}>
             Disinkron {timeAgo(lastSynced)} &middot; data ini bisa dilihat & diubah siapa pun yang punya link
           </p>
         </div>
