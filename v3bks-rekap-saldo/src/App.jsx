@@ -4,7 +4,7 @@ import {
   Plus, X, Landmark, Banknote, ArrowLeftRight, Pencil, Trash2,
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
-  LayoutDashboard, ListChecks,
+  LayoutDashboard, ListChecks, Tag,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -62,9 +62,13 @@ function computeBalanceAsOf(transactions, initialBalances, dateStr) {
   const bal = { ...initialBalances };
   transactions.forEach((t) => {
     if (t.date > dateStr) return;
-    if (t.type === "income") bal[t.method] = (bal[t.method] || 0) + t.amount;
-    else if (t.type === "expense" || t.type === "prive") bal[t.method] = (bal[t.method] || 0) - t.amount;
-    else if (t.type === "transfer") {
+    if (t.type === "income") {
+      if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) + s.amount; });
+      else bal[t.method] = (bal[t.method] || 0) + t.amount;
+    } else if (t.type === "expense" || t.type === "prive") {
+      if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) - s.amount; });
+      else bal[t.method] = (bal[t.method] || 0) - t.amount;
+    } else if (t.type === "transfer") {
       bal[t.fromMethod] = (bal[t.fromMethod] || 0) - t.amount;
       bal[t.toMethod] = (bal[t.toMethod] || 0) + t.amount;
     }
@@ -203,10 +207,16 @@ export default function App() {
           Tanggal: t.date,
           Tipe: t.type,
           Kategori: t.category || "",
-          "Dari/Kantong": t.type === "transfer" ? t.fromMethod : t.method || "",
+          "Dari/Kantong": t.type === "transfer"
+            ? t.fromMethod
+            : t.splits && t.splits.length
+            ? t.splits.map((s) => `${s.method}:${s.amount}`).join(" | ")
+            : t.method || "",
           "Ke Kantong": t.type === "transfer" ? t.toMethod : "",
           Status: t.status || "",
           "Klien/Entitas": t.entity || "",
+          "Durasi (Jam)": t.duration || "",
+          Promo: t.promo || "",
           Jumlah: t.amount,
           Catatan: t.note || "",
           "Dicatat Oleh": t.recordedBy || "",
@@ -255,9 +265,13 @@ export default function App() {
   const balances = useMemo(() => {
     const bal = { ...initialBalances };
     transactions.forEach((t) => {
-      if (t.type === "income") bal[t.method] = (bal[t.method] || 0) + t.amount;
-      else if (t.type === "expense" || t.type === "prive") bal[t.method] = (bal[t.method] || 0) - t.amount;
-      else if (t.type === "transfer") {
+      if (t.type === "income") {
+        if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) + s.amount; });
+        else bal[t.method] = (bal[t.method] || 0) + t.amount;
+      } else if (t.type === "expense" || t.type === "prive") {
+        if (t.splits && t.splits.length) t.splits.forEach((s) => { bal[s.method] = (bal[s.method] || 0) - s.amount; });
+        else bal[t.method] = (bal[t.method] || 0) - t.amount;
+      } else if (t.type === "transfer") {
         bal[t.fromMethod] = (bal[t.fromMethod] || 0) - t.amount;
         bal[t.toMethod] = (bal[t.toMethod] || 0) + t.amount;
       }
@@ -382,6 +396,25 @@ export default function App() {
     return Object.values(map).sort((a, b) => a.duration - b.duration);
   }, [periodTransactions]);
 
+  const existingPromos = useMemo(
+    () => Array.from(new Set(transactions.filter((t) => t.promo).map((t) => t.promo))).sort(),
+    [transactions]
+  );
+
+  const promoBreakdown = useMemo(() => {
+    const map = {};
+    periodTransactions.forEach((t) => {
+      if (t.type !== "income" || !t.promo) return;
+      if (!map[t.promo]) map[t.promo] = { promo: t.promo, count: 0, amount: 0, clients: new Set() };
+      map[t.promo].count += 1;
+      map[t.promo].amount += t.amount;
+      if (t.entity) map[t.promo].clients.add(t.entity);
+    });
+    return Object.values(map)
+      .map((p) => ({ ...p, clients: Array.from(p.clients) }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [periodTransactions]);
+
   const periodPrive = useMemo(
     () => periodTransactions.filter((t) => t.type === "prive").reduce((sum, t) => sum + t.amount, 0),
     [periodTransactions]
@@ -436,7 +469,8 @@ export default function App() {
         if (filterType !== "all" && t.type !== filterType) return false;
         if (filterStatus !== "all" && t.status !== filterStatus) return false;
         if (searchTerm) {
-          const hay = `${t.category || ""} ${t.entity || ""} ${t.note || ""} ${t.method || ""} ${t.fromMethod || ""} ${t.toMethod || ""} ${t.recordedBy || ""}`.toLowerCase();
+          const splitMethods = t.splits && t.splits.length ? t.splits.map((s) => s.method).join(" ") : "";
+          const hay = `${t.category || ""} ${t.entity || ""} ${t.note || ""} ${t.method || ""} ${t.fromMethod || ""} ${t.toMethod || ""} ${t.recordedBy || ""} ${t.promo || ""} ${splitMethods}`.toLowerCase();
           if (!hay.includes(searchTerm.toLowerCase())) return false;
         }
         return true;
@@ -821,6 +855,32 @@ export default function App() {
 
         <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.4rem" }}>
           <div className="flex items-center gap-1.5" style={{ marginBottom: "0.7rem" }}>
+            <Tag size={14} style={{ color: "#C9A227" }} />
+            <p className="v3-display" style={{ fontSize: "0.88rem", fontWeight: 600, letterSpacing: "0.02em" }}>Riwayat Penggunaan Promo</p>
+          </div>
+          {promoBreakdown.length === 0 ? (
+            <p className="v3-muted" style={{ fontSize: "0.78rem" }}>
+              Belum ada transaksi dengan promo tercatat untuk periode ini. Isi "Promo yang dipakai" saat tambah transaksi Income.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {promoBreakdown.map((p) => (
+                <div key={p.promo} className="v3-surface-alt" style={{ borderRadius: 10, padding: "0.55rem 0.75rem" }}>
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{p.promo}</span>
+                    <span className="v3-mono v3-gold" style={{ fontSize: "0.82rem", fontWeight: 700 }}>{formatRupiah(p.amount)}</span>
+                  </div>
+                  <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.15rem" }}>
+                    {p.count} transaksi{p.clients.length ? " · " + p.clients.join(", ") : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.4rem" }}>
+          <div className="flex items-center gap-1.5" style={{ marginBottom: "0.7rem" }}>
             <Trophy size={15} className="v3-gold" />
             <p className="v3-display" style={{ fontSize: "0.95rem", fontWeight: 600, letterSpacing: "0.03em" }}>
               Top Klien {selectedMonth !== null ? MONTHS[selectedMonth] : ""} {selectedYear}
@@ -984,6 +1044,7 @@ export default function App() {
       {showForm && (
         <TransactionModal
           editingTx={editingTx}
+          existingPromos={existingPromos}
           onSave={handleSaveTransaction}
           onClose={() => { setShowForm(false); setEditingTx(null); }}
         />
@@ -1091,7 +1152,9 @@ function TransactionRow({ tx, onEdit, onDelete }) {
           )}
         </div>
         <p className="v3-muted" style={{ fontSize: "0.72rem" }}>
-          {tx.date}{tx.entity ? " · " + tx.entity : ""}{!isTransfer ? " · " + tx.method : ""}{tx.duration ? " · " + tx.duration + " Jam" : ""}{tx.recordedBy ? " · oleh " + tx.recordedBy : ""}
+          {tx.date}{tx.entity ? " · " + tx.entity : ""}
+          {!isTransfer ? " · " + (tx.splits && tx.splits.length ? tx.splits.map((s) => s.method).join("+") : tx.method) : ""}
+          {tx.duration ? " · " + tx.duration + " Jam" : ""}{tx.promo ? " · Promo: " + tx.promo : ""}{tx.recordedBy ? " · oleh " + tx.recordedBy : ""}
         </p>
         {tx.note && <p className="v3-muted" style={{ fontSize: "0.72rem", fontStyle: "italic" }}>{tx.note}</p>}
       </div>
@@ -1108,12 +1171,19 @@ function TransactionRow({ tx, onEdit, onDelete }) {
   );
 }
 
-function TransactionModal({ editingTx, onSave, onClose }) {
+function TransactionModal({ editingTx, existingPromos, onSave, onClose }) {
   const [type, setType] = useState(editingTx?.type || "income");
   const [date, setDate] = useState(editingTx?.date || todayISO());
   const [category, setCategory] = useState(editingTx?.category || INCOME_CATEGORIES[0]);
   const [method, setMethod] = useState(editingTx?.method || METHODS[0]);
   const [status, setStatus] = useState(editingTx?.status || "Lunas");
+  const [splitMode, setSplitMode] = useState(!!(editingTx?.splits && editingTx.splits.length));
+  const [splits, setSplits] = useState(
+    editingTx?.splits && editingTx.splits.length
+      ? editingTx.splits.map((s) => ({ method: s.method, amount: String(s.amount) }))
+      : [{ method: METHODS[0], amount: "" }, { method: METHODS[1], amount: "" }]
+  );
+  const [promo, setPromo] = useState(editingTx?.promo || "");
   const [fromMethod, setFromMethod] = useState(editingTx?.fromMethod || METHODS[0]);
   const [toMethod, setToMethod] = useState(editingTx?.toMethod || METHODS[1]);
   const [amount, setAmount] = useState(editingTx?.amount ? String(editingTx.amount) : "");
@@ -1141,11 +1211,31 @@ function TransactionModal({ editingTx, onSave, onClose }) {
   }, [type]);
 
   const categories = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-  const amountNum = parseFloat(amount);
+  const isMoneyType = type === "income" || type === "expense";
+  const splitsTotal = splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const splitsValid =
+    splits.length > 0 &&
+    splits.every((s) => s.method && parseFloat(s.amount) > 0) &&
+    new Set(splits.map((s) => s.method)).size === splits.length;
+  const amountNum = isMoneyType && splitMode ? splitsTotal : parseFloat(amount);
   const isValid =
     amountNum > 0 &&
     !!date &&
-    (type === "transfer" ? fromMethod !== toMethod : type === "prive" ? !!method : !!category && !!method);
+    (type === "transfer"
+      ? fromMethod !== toMethod
+      : type === "prive"
+      ? !!method
+      : splitMode
+      ? splitsValid
+      : !!category && !!method);
+
+  const addSplitRow = () => {
+    const unused = METHODS.find((m) => !splits.some((s) => s.method === m));
+    setSplits((prev) => [...prev, { method: unused || METHODS[0], amount: "" }]);
+  };
+  const removeSplitRow = (idx) => setSplits((prev) => prev.filter((_, i) => i !== idx));
+  const updateSplitRow = (idx, field, value) =>
+    setSplits((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1157,7 +1247,16 @@ function TransactionModal({ editingTx, onSave, onClose }) {
     else if (type === "prive") tx = { ...base, method };
     else {
       const durationNum = parseFloat(duration);
-      tx = { ...base, category, method, status, entity: entity.trim(), duration: durationNum > 0 ? durationNum : null };
+      const common = {
+        category,
+        status,
+        entity: entity.trim(),
+        duration: durationNum > 0 ? durationNum : null,
+        promo: type === "income" ? promo.trim() : "",
+      };
+      tx = splitMode
+        ? { ...base, ...common, splits: splits.map((s) => ({ method: s.method, amount: parseFloat(s.amount) })) }
+        : { ...base, ...common, method };
     }
     if (recordedBy.trim()) {
       window.storage.set("v3bks_last_recorder_name", recordedBy.trim(), false).catch(() => {});
@@ -1211,11 +1310,71 @@ function TransactionModal({ editingTx, onSave, onClose }) {
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-              <Field label="Kantong / Metode">
+              <div className="flex items-center justify-between">
+                <span className="v3-muted" style={{ fontSize: "0.72rem" }}>Kantong / Metode</span>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode((v) => !v)}
+                  className="v3-mono"
+                  style={{ fontSize: "0.68rem", fontWeight: 600, color: "#C9A227", textDecoration: "underline" }}
+                >
+                  {splitMode ? "Pakai 1 kantong saja" : "Split ke beberapa kantong"}
+                </button>
+              </div>
+
+              {!splitMode ? (
                 <select value={method} onChange={(e) => setMethod(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}>
                   {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
-              </Field>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {splits.map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <select
+                        value={s.method}
+                        onChange={(e) => updateSplitRow(idx, "method", e.target.value)}
+                        className="v3-input"
+                        style={{ borderRadius: 8, padding: "0.5rem 0.6rem", fontSize: "0.85rem", flex: "1 1 0%" }}
+                      >
+                        {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={s.amount}
+                        onChange={(e) => updateSplitRow(idx, "amount", e.target.value)}
+                        placeholder="0"
+                        className="v3-input"
+                        style={{ borderRadius: 8, padding: "0.5rem 0.6rem", fontSize: "0.85rem", flex: "1 1 0%" }}
+                      />
+                      {splits.length > 1 && (
+                        <button type="button" onClick={() => removeSplitRow(idx)} aria-label="Hapus baris">
+                          <X size={16} className="v3-muted" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {splits.length < METHODS.length && (
+                    <button
+                      type="button"
+                      onClick={addSplitRow}
+                      className="v3-surface-alt v3-muted flex items-center justify-center gap-1"
+                      style={{ borderRadius: 8, padding: "0.4rem 0", fontSize: "0.75rem", fontWeight: 600 }}
+                    >
+                      <Plus size={13} /> Tambah Kantong
+                    </button>
+                  )}
+                  <div className="v3-surface-alt" style={{ borderRadius: 8, padding: "0.5rem 0.7rem" }}>
+                    <span className="v3-muted" style={{ fontSize: "0.72rem" }}>Total: </span>
+                    <span className="v3-mono v3-gold" style={{ fontWeight: 700, fontSize: "0.85rem" }}>{formatRupiah(splitsTotal)}</span>
+                  </div>
+                  {touched && !splitsValid && (
+                    <p style={{ color: "#D1574A", fontSize: "0.72rem" }}>
+                      Setiap baris perlu kantong & jumlah valid, dan kantong tidak boleh dipilih dobel.
+                    </p>
+                  )}
+                </div>
+              )}
               <Field label="Status Pembayaran">
                 <select value={status} onChange={(e) => setStatus(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}>
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -1232,6 +1391,18 @@ function TransactionModal({ editingTx, onSave, onClose }) {
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
                     placeholder="cth. 2"
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+                  />
+                </Field>
+              )}
+              {type === "income" && (
+                <Field label="Promo yang dipakai (opsional)">
+                  <input
+                    value={promo}
+                    onChange={(e) => setPromo(e.target.value)}
+                    placeholder="cth. Promo Triwulan"
+                    list="promo-suggestions"
                     className="v3-input"
                     style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
                   />
@@ -1267,18 +1438,20 @@ function TransactionModal({ editingTx, onSave, onClose }) {
             </>
           )}
 
-          <Field label="Jumlah (Rp)">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="v3-input"
-              style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
-            />
-            {touched && !(amountNum > 0) && <p style={{ color: "#D1574A", fontSize: "0.75rem", marginTop: "0.25rem" }}>Jumlah harus lebih dari 0.</p>}
-          </Field>
+          {!(isMoneyType && splitMode) && (
+            <Field label="Jumlah (Rp)">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+                className="v3-input"
+                style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+              />
+              {touched && !(amountNum > 0) && <p style={{ color: "#D1574A", fontSize: "0.75rem", marginTop: "0.25rem" }}>Jumlah harus lebih dari 0.</p>}
+            </Field>
+          )}
 
           <Field label="Catatan (opsional)">
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem", resize: "none" }} />
@@ -1287,6 +1460,10 @@ function TransactionModal({ editingTx, onSave, onClose }) {
           <button type="submit" className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem", marginTop: "0.3rem" }}>
             {editingTx ? "Simpan Perubahan" : "Simpan Transaksi"}
           </button>
+
+          <datalist id="promo-suggestions">
+            {(existingPromos || []).map((p) => <option key={p} value={p} />)}
+          </datalist>
         </form>
       </div>
     </div>
