@@ -99,6 +99,7 @@ export default function App() {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [filterMethod, setFilterMethod] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -476,6 +477,11 @@ export default function App() {
         if (filterType !== "all" && t.type !== filterType) return false;
         if (filterStatus !== "all" && t.status !== filterStatus) return false;
         if (filterCategory !== "all" && t.category !== filterCategory) return false;
+        if (filterMethod !== "all") {
+          const matchesSplit = t.splits && t.splits.some((s) => s.method === filterMethod);
+          const matchesSingle = t.method === filterMethod || t.fromMethod === filterMethod || t.toMethod === filterMethod;
+          if (!matchesSplit && !matchesSingle) return false;
+        }
         if (searchTerm) {
           const splitMethods = t.splits && t.splits.length ? t.splits.map((s) => s.method).join(" ") : "";
           const hay = `${t.category || ""} ${t.entity || ""} ${t.note || ""} ${t.method || ""} ${t.fromMethod || ""} ${t.toMethod || ""} ${t.recordedBy || ""} ${t.promo || ""} ${splitMethods}`.toLowerCase();
@@ -484,20 +490,21 @@ export default function App() {
         return true;
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  }, [transactions, dateFrom, dateTo, filterType, filterStatus, filterCategory, searchTerm]);
+  }, [transactions, dateFrom, dateTo, filterType, filterStatus, filterCategory, filterMethod, searchTerm]);
 
   const allCategories = useMemo(
     () => Array.from(new Set([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES])),
     []
   );
 
-  const hasActiveFilters = dateFrom || dateTo || filterType !== "all" || filterStatus !== "all" || filterCategory !== "all" || searchTerm;
+  const hasActiveFilters = dateFrom || dateTo || filterType !== "all" || filterStatus !== "all" || filterCategory !== "all" || filterMethod !== "all" || searchTerm;
   const resetFilters = () => {
     setDateFrom("");
     setDateTo("");
     setFilterType("all");
     setFilterStatus("all");
     setFilterCategory("all");
+    setFilterMethod("all");
     setSearchTerm("");
   };
 
@@ -1041,6 +1048,33 @@ export default function App() {
                 {label}
               </button>
             ))}
+          </div>
+
+          <div className="v3-scroll flex gap-1.5" style={{ overflowX: "auto" }}>
+            {[["all", "Semua Kantong"], ...METHODS.map((m) => [m, m])].map(([val, label]) => {
+              const isActive = filterMethod === val;
+              const accent = val !== "all" ? METHOD_META[val]?.accent : null;
+              return (
+                <button
+                  key={val}
+                  onClick={() => setFilterMethod(val)}
+                  style={{
+                    borderRadius: 999,
+                    padding: "0.35rem 0.7rem",
+                    fontSize: "0.72rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    background: isActive ? (accent || "#C9A227") : "rgba(255,255,255,0.05)",
+                    color: isActive ? "#0B0D10" : "#8A9099",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
           {hasActiveFilters && (
