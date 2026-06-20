@@ -4,7 +4,7 @@ import {
   Plus, X, Landmark, Banknote, ArrowLeftRight, Pencil, Trash2,
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
-  LayoutDashboard, ListChecks, Tag,
+  LayoutDashboard, ListChecks, Tag, ShieldCheck,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -93,6 +93,7 @@ export default function App() {
   const [showReconModal, setShowReconModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [actuals, setActuals] = useState({ Cash: "", BCA: "", Mandiri: "", BNI: "" });
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(null);
@@ -292,6 +293,25 @@ export default function App() {
   );
 
   const saldoBersih = totalSaldo - initialBalancesTotal;
+
+  const cekSaldoResult = useMemo(() => {
+    const currentBalances = computeBalanceAsOf(transactions, initialBalances, todayISO());
+    return METHODS.map((m) => {
+      const sistem = currentBalances[m] || 0;
+      const rawActual = actuals[m];
+      const hasInput = rawActual !== "" && rawActual !== null && rawActual !== undefined;
+      const aktual = hasInput ? (parseFloat(rawActual) || 0) : null;
+      const diff = aktual !== null ? aktual - sistem : null;
+      return { method: m, sistem, aktual, diff, hasInput };
+    });
+  }, [transactions, initialBalances, actuals]);
+
+  const cekSaldoTotalDiff = useMemo(
+    () => cekSaldoResult.filter((r) => r.hasInput).reduce((sum, r) => sum + (r.diff || 0), 0),
+    [cekSaldoResult]
+  );
+  const cekSaldoInputCount = cekSaldoResult.filter((r) => r.hasInput).length;
+  const cekSaldoHasSelisih = cekSaldoResult.some((r) => r.hasInput && Math.round(r.diff) !== 0);
 
   const monthlyData = useMemo(() => {
     const rows = MONTHS.map((label, idx) => ({ idx, label, income: 0, expense: 0 }));
@@ -1118,6 +1138,19 @@ export default function App() {
           </>
         )}
 
+        {activeTab === "ceksaldo" && (
+          <CekSaldoTab
+            cekSaldoResult={cekSaldoResult}
+            cekSaldoTotalDiff={cekSaldoTotalDiff}
+            cekSaldoInputCount={cekSaldoInputCount}
+            cekSaldoHasSelisih={cekSaldoHasSelisih}
+            actuals={actuals}
+            setActuals={setActuals}
+            onSaveRecon={handleSaveReconciliation}
+            todayStr={todayStr}
+          />
+        )}
+
         <p className="v3-muted" style={{ fontSize: "0.7rem", textAlign: "center", marginTop: "2rem" }}>
           V3BKS Mini Soccer &amp; Cafe &middot; Samarinda
         </p>
@@ -1132,6 +1165,7 @@ export default function App() {
           ["dashboard", "Dashboard", LayoutDashboard],
           ["analitik", "Analitik", BarChart3],
           ["transaksi", "Transaksi", ListChecks],
+          ["ceksaldo", "Cek Saldo", ShieldCheck],
         ].map(([key, label, TabIcon]) => (
           <button
             key={key}
@@ -1195,6 +1229,170 @@ export default function App() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+    </div>
+  );
+}
+
+function CekSaldoTab({ cekSaldoResult, cekSaldoTotalDiff, cekSaldoInputCount, cekSaldoHasSelisih, actuals, setActuals, onSaveRecon, todayStr }) {
+  const [recordedBy, setRecordedBy] = useState("");
+  const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get("v3bks_last_recorder_name", false);
+        if (res && res.value) setRecordedBy(res.value);
+      } catch (e) {}
+    })();
+  }, []);
+
+  const handleSave = () => {
+    const perMethod = {};
+    cekSaldoResult.forEach((r) => {
+      perMethod[r.method] = {
+        system: r.sistem,
+        actual: r.aktual !== null ? r.aktual : r.sistem,
+        diff: r.diff !== null ? r.diff : 0,
+      };
+    });
+    onSaveRecon({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      date: todayStr,
+      recordedBy: recordedBy.trim(),
+      note: note.trim(),
+      perMethod,
+      totalDiff: cekSaldoTotalDiff,
+      timestamp: Date.now(),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const allFilled = cekSaldoResult.every((r) => r.hasInput);
+  const statusColor = cekSaldoInputCount === 0
+    ? "#8A9099"
+    : !cekSaldoHasSelisih
+    ? "#4CAF61"
+    : "#D1574A";
+  const statusText = cekSaldoInputCount === 0
+    ? "Belum ada input"
+    : !cekSaldoHasSelisih
+    ? "Semua kantong cocok ✓"
+    : `Ada selisih di ${cekSaldoResult.filter((r) => r.hasInput && Math.round(r.diff) !== 0).length} kantong`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+      {/* Status header */}
+      <div
+        className="v3-surface"
+        style={{ borderRadius: 18, padding: "1.2rem 1.4rem", borderLeft: `4px solid ${statusColor}` }}
+      >
+        <p className="v3-muted" style={{ fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          Status Saldo Hari Ini · {todayStr}
+        </p>
+        <p style={{ fontSize: "1.05rem", fontWeight: 700, color: statusColor, marginTop: "0.3rem" }}>
+          {statusText}
+        </p>
+        {cekSaldoInputCount > 0 && (
+          <p className="v3-mono" style={{ fontSize: "0.95rem", fontWeight: 600, marginTop: "0.15rem", color: cekSaldoHasSelisih ? "#D1574A" : "#4CAF61" }}>
+            Total selisih: {formatRupiah(cekSaldoTotalDiff)}
+          </p>
+        )}
+        <p className="v3-muted" style={{ fontSize: "0.7rem", marginTop: "0.4rem" }}>
+          Ketik saldo fisik / saldo bank aktual di bawah. Selisih muncul otomatis, tidak perlu disimpan dulu.
+        </p>
+      </div>
+
+      {/* Per kantong input + diff */}
+      {cekSaldoResult.map((r) => {
+        const { method, sistem, aktual, diff, hasInput } = r;
+        const Icon = METHOD_META[method].icon;
+        const accent = METHOD_META[method].accent;
+        const diffOk = hasInput && Math.round(diff) === 0;
+        const diffBad = hasInput && Math.round(diff) !== 0;
+        return (
+          <div
+            key={method}
+            className="v3-surface"
+            style={{ borderRadius: 14, overflow: "hidden", border: diffBad ? "1.5px solid #D1574A" : diffOk ? "1.5px solid #4CAF61" : undefined }}
+          >
+            <div style={{ height: 4, background: accent }} />
+            <div style={{ padding: "0.85rem 1rem" }}>
+              <div className="flex items-center gap-1.5" style={{ marginBottom: "0.5rem" }}>
+                <Icon size={14} style={{ color: accent }} />
+                <span style={{ fontSize: "0.82rem", fontWeight: 700 }}>{method}</span>
+                {diffOk && <span style={{ fontSize: "0.68rem", color: "#4CAF61", fontWeight: 600 }}>✓ Cocok</span>}
+                {diffBad && <span style={{ fontSize: "0.68rem", color: "#D1574A", fontWeight: 600 }}>⚠ Selisih {formatRupiah(diff)}</span>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="v3-muted" style={{ fontSize: "0.65rem", marginBottom: "0.2rem" }}>Saldo Sistem</p>
+                  <p className="v3-mono" style={{ fontSize: "0.9rem", fontWeight: 600 }}>{formatRupiah(sistem)}</p>
+                </div>
+                <div>
+                  <p className="v3-muted" style={{ fontSize: "0.65rem", marginBottom: "0.2rem" }}>Saldo Aktual (ketik)</p>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={actuals[method]}
+                    onChange={(e) => setActuals((prev) => ({ ...prev, [method]: e.target.value }))}
+                    placeholder={String(Math.round(sistem))}
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.4rem 0.5rem", width: "100%", fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Tombol simpan rekonsiliasi */}
+      <div className="v3-surface" style={{ borderRadius: 14, padding: "0.9rem 1rem" }}>
+        <p className="v3-muted" style={{ fontSize: "0.72rem", marginBottom: "0.5rem" }}>
+          Simpan hasil cek ini sebagai catatan rekonsiliasi resmi:
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.6rem" }}>
+          <input
+            value={recordedBy}
+            onChange={(e) => setRecordedBy(e.target.value)}
+            placeholder="Dicatat oleh (cth. Holil / Josua)"
+            className="v3-input"
+            style={{ borderRadius: 8, padding: "0.45rem 0.6rem", fontSize: "0.82rem" }}
+          />
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Catatan (opsional, cth: selisih karena kembalian belum dicatat)"
+            rows={2}
+            className="v3-input"
+            style={{ borderRadius: 8, padding: "0.45rem 0.6rem", fontSize: "0.82rem", resize: "none" }}
+          />
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={cekSaldoInputCount === 0}
+          className="v3-gold-bg"
+          style={{
+            borderRadius: 10,
+            padding: "0.6rem 0",
+            fontWeight: 700,
+            fontSize: "0.85rem",
+            width: "100%",
+            opacity: cekSaldoInputCount === 0 ? 0.4 : 1,
+            cursor: cekSaldoInputCount === 0 ? "not-allowed" : "pointer",
+          }}
+        >
+          {saved ? "✓ Tersimpan!" : "Simpan sebagai Rekonsiliasi"}
+        </button>
+        {cekSaldoInputCount === 0 && (
+          <p className="v3-muted" style={{ fontSize: "0.7rem", marginTop: "0.3rem", textAlign: "center" }}>
+            Isi minimal 1 kantong dulu untuk bisa menyimpan.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
