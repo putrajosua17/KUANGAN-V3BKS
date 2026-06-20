@@ -91,6 +91,8 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showReconModal, setShowReconModal] = useState(false);
+  const [showLunasModal, setShowLunasModal] = useState(false);
+  const [selectedPiutang, setSelectedPiutang] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [actuals, setActuals] = useState({ Cash: "", BCA: "", Mandiri: "", BNI: "" });
@@ -107,7 +109,7 @@ export default function App() {
 
   const modalOpenRef = useRef(false);
   useEffect(() => {
-    modalOpenRef.current = showForm || showSettings || showReconModal || !!confirmDelete;
+    modalOpenRef.current = showForm || showSettings || showReconModal || showLunasModal || !!confirmDelete;
   }, [showForm, showSettings, showReconModal, confirmDelete]);
 
   const loadData = useCallback(async (isInitial) => {
@@ -204,6 +206,34 @@ export default function App() {
       return next;
     });
     setShowReconModal(false);
+  };
+
+  const handleTandaiLunas = (piutang, pelunasanData) => {
+    setTransactions((prev) => {
+      const pelunasanId = uid();
+      const pelunasanTx = {
+        id: pelunasanId,
+        type: "income",
+        date: pelunasanData.date,
+        amount: piutang.sisa,
+        category: piutang.category,
+        entity: piutang.entity || "",
+        status: "Lunas",
+        note: "Pelunasan otomatis dari panel Piutang Aktif",
+        recordedBy: pelunasanData.recordedBy || "",
+        ...(pelunasanData.splitMode
+          ? { splits: pelunasanData.splits }
+          : { method: pelunasanData.method }),
+      };
+      const updated = prev.map((t) =>
+        t.id === piutang.id ? { ...t, status: "Lunas" } : t
+      );
+      const next = [...updated, pelunasanTx];
+      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      return next;
+    });
+    setShowLunasModal(false);
+    setSelectedPiutang(null);
   };
 
   const handleExport = () => {
@@ -489,6 +519,23 @@ export default function App() {
     return { count, amount };
   }, [periodTransactions]);
 
+  const piutangList = useMemo(() => {
+    return transactions
+      .filter((t) =>
+        t.type === "income" &&
+        t.status !== "Lunas" &&
+        t.totalKontrak > 0 &&
+        t.totalKontrak > t.amount
+      )
+      .map((t) => ({
+        ...t,
+        sisa: t.totalKontrak - t.amount,
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+  }, [transactions]);
+
+  const totalPiutang = piutangList.reduce((sum, p) => sum + p.sisa, 0);
+
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((t) => {
@@ -666,6 +713,65 @@ export default function App() {
               </div>
             );
           })}
+        </div>
+
+        {/* Piutang Aktif */}
+        <div className="v3-surface" style={{ borderRadius: 16, padding: "1.1rem 1.2rem", marginBottom: "1.4rem" }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: "0.5rem" }}>
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle size={15} style={{ color: piutangList.length > 0 ? "#D1574A" : "#8A9099" }} />
+              <p className="v3-display" style={{ fontSize: "0.95rem", fontWeight: 600, letterSpacing: "0.03em" }}>
+                Piutang Aktif
+              </p>
+            </div>
+            {piutangList.length > 0 && (
+              <span className="v3-mono" style={{ fontSize: "0.78rem", fontWeight: 700, color: "#D1574A" }}>
+                {formatRupiah(totalPiutang)}
+              </span>
+            )}
+          </div>
+
+          {piutangList.length === 0 ? (
+            <div className="flex items-center gap-2" style={{ background: "rgba(76,175,97,0.1)", borderRadius: 10, padding: "0.6rem 0.8rem" }}>
+              <CheckCircle2 size={14} className="v3-green" />
+              <p style={{ fontSize: "0.78rem" }}>Tidak ada piutang aktif. Semua kontrak sudah lunas.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {piutangList.map((p) => (
+                <div key={p.id} className="v3-surface-alt" style={{ borderRadius: 10, padding: "0.6rem 0.75rem", borderLeft: "3px solid #D1574A" }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: "0.82rem", fontWeight: 600 }}>
+                        {p.entity || p.category}
+                      </p>
+                      <p className="v3-muted" style={{ fontSize: "0.68rem" }}>
+                        {p.date} · {p.category} · {p.status}
+                      </p>
+                      <div className="flex gap-2" style={{ marginTop: "0.25rem", flexWrap: "wrap" }}>
+                        <span className="v3-mono" style={{ fontSize: "0.7rem", color: "#8A9099" }}>
+                          Sudah masuk: <span style={{ color: "#4CAF61" }}>{formatRupiah(p.amount)}</span>
+                        </span>
+                        <span className="v3-mono" style={{ fontSize: "0.7rem" }}>
+                          Sisa: <span style={{ color: "#D1574A", fontWeight: 700 }}>{formatRupiah(p.sisa)}</span>
+                        </span>
+                        <span className="v3-mono" style={{ fontSize: "0.7rem", color: "#8A9099" }}>
+                          Total: {formatRupiah(p.totalKontrak)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setSelectedPiutang(p); setShowLunasModal(true); }}
+                      className="v3-gold-bg"
+                      style={{ borderRadius: 8, padding: "0.35rem 0.7rem", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}
+                    >
+                      Tandai Lunas
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Rekonsiliasi Kas Harian */}
@@ -1213,6 +1319,14 @@ export default function App() {
         />
       )}
 
+      {showLunasModal && selectedPiutang && (
+        <LunasModal
+          piutang={selectedPiutang}
+          onConfirm={(data) => handleTandaiLunas(selectedPiutang, data)}
+          onClose={() => { setShowLunasModal(false); setSelectedPiutang(null); }}
+        />
+      )}
+
       {showReconModal && (
         <ReconciliationModal
           transactions={transactions}
@@ -1229,6 +1343,170 @@ export default function App() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+    </div>
+  );
+}
+
+function LunasModal({ piutang, onConfirm, onClose }) {
+  const [date, setDate] = useState(todayISO());
+  const [splitMode, setSplitMode] = useState(false);
+  const [method, setMethod] = useState(piutang.method || METHODS[0]);
+  const [splits, setSplits] = useState([
+    { method: METHODS[0], amount: String(Math.round(piutang.sisa)) },
+    { method: METHODS[1], amount: "" },
+  ]);
+  const [recordedBy, setRecordedBy] = useState(piutang.recordedBy || "");
+
+  const splitsTotal = splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const splitsValid =
+    splits.length > 0 &&
+    splits.every((s) => s.method && parseFloat(s.amount) > 0) &&
+    new Set(splits.map((s) => s.method)).size === splits.length &&
+    Math.round(splitsTotal) === Math.round(piutang.sisa);
+
+  const addSplitRow = () => {
+    const unused = METHODS.find((m) => !splits.some((s) => s.method === m));
+    setSplits((prev) => [...prev, { method: unused || METHODS[0], amount: "" }]);
+  };
+  const removeSplitRow = (idx) => setSplits((prev) => prev.filter((_, i) => i !== idx));
+  const updateSplitRow = (idx, field, value) =>
+    setSplits((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
+
+  const handleConfirm = () => {
+    onConfirm({
+      date,
+      recordedBy: recordedBy.trim(),
+      splitMode,
+      method: splitMode ? null : method,
+      splits: splitMode ? splits.map((s) => ({ method: s.method, amount: parseFloat(s.amount) })) : null,
+    });
+  };
+
+  const isValid = splitMode ? splitsValid : !!method;
+
+  return (
+    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 50, padding: "1rem" }}>
+      <div className="v3-surface" style={{ borderRadius: 18, width: "100%", maxWidth: 420, maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="flex items-center justify-between" style={{ padding: "1rem 1.2rem", borderBottom: "1px solid rgba(201,162,39,0.15)" }}>
+          <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700 }}>Tandai Lunas</p>
+          <button onClick={onClose} aria-label="Tutup"><X size={18} className="v3-muted" /></button>
+        </div>
+
+        <div style={{ padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+          <div className="v3-surface-alt" style={{ borderRadius: 10, padding: "0.7rem 0.85rem" }}>
+            <p style={{ fontSize: "0.82rem", fontWeight: 600 }}>{piutang.entity || piutang.category}</p>
+            <p className="v3-muted" style={{ fontSize: "0.7rem" }}>{piutang.category} · {piutang.date}</p>
+            <div className="flex gap-3" style={{ marginTop: "0.35rem" }}>
+              <span className="v3-mono" style={{ fontSize: "0.75rem", color: "#8A9099" }}>
+                Sudah: <span style={{ color: "#4CAF61" }}>{formatRupiah(piutang.amount)}</span>
+              </span>
+              <span className="v3-mono" style={{ fontSize: "0.75rem" }}>
+                Sisa: <span style={{ color: "#D1574A", fontWeight: 700 }}>{formatRupiah(piutang.sisa)}</span>
+              </span>
+            </div>
+          </div>
+
+          <Field label="Tanggal Pelunasan">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+            />
+          </Field>
+
+          <div className="flex items-center justify-between">
+            <span className="v3-muted" style={{ fontSize: "0.72rem" }}>Kantong Penerima</span>
+            <button
+              type="button"
+              onClick={() => setSplitMode((v) => !v)}
+              style={{ fontSize: "0.68rem", fontWeight: 600, color: "#C9A227", textDecoration: "underline" }}
+            >
+              {splitMode ? "Pakai 1 kantong" : "Split ke beberapa kantong"}
+            </button>
+          </div>
+
+          {!splitMode ? (
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+            >
+              {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {splits.map((s, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select
+                    value={s.method}
+                    onChange={(e) => updateSplitRow(idx, "method", e.target.value)}
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.5rem 0.6rem", fontSize: "0.85rem", flex: "1 1 0%" }}
+                  >
+                    {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={s.amount}
+                    onChange={(e) => updateSplitRow(idx, "amount", e.target.value)}
+                    placeholder="0"
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.5rem 0.6rem", fontSize: "0.85rem", flex: "1 1 0%" }}
+                  />
+                  {splits.length > 1 && (
+                    <button type="button" onClick={() => removeSplitRow(idx)}><X size={14} className="v3-muted" /></button>
+                  )}
+                </div>
+              ))}
+              {splits.length < METHODS.length && (
+                <button
+                  type="button"
+                  onClick={addSplitRow}
+                  className="v3-surface-alt v3-muted flex items-center justify-center gap-1"
+                  style={{ borderRadius: 8, padding: "0.4rem 0", fontSize: "0.75rem", fontWeight: 600 }}
+                >
+                  <Plus size={13} /> Tambah Kantong
+                </button>
+              )}
+              <div className="v3-surface-alt" style={{ borderRadius: 8, padding: "0.5rem 0.7rem" }}>
+                <span className="v3-muted" style={{ fontSize: "0.72rem" }}>Total split: </span>
+                <span className="v3-mono" style={{ fontWeight: 700, fontSize: "0.85rem", color: Math.round(splitsTotal) === Math.round(piutang.sisa) ? "#4CAF61" : "#D1574A" }}>
+                  {formatRupiah(splitsTotal)}
+                </span>
+                <span className="v3-muted" style={{ fontSize: "0.72rem" }}> / {formatRupiah(piutang.sisa)}</span>
+              </div>
+              {splitMode && !splitsValid && splitsTotal > 0 && Math.round(splitsTotal) !== Math.round(piutang.sisa) && (
+                <p style={{ color: "#D1574A", fontSize: "0.72rem" }}>
+                  Total split harus sama persis dengan sisa piutang ({formatRupiah(piutang.sisa)}).
+                </p>
+              )}
+            </div>
+          )}
+
+          <Field label="Dicatat oleh (opsional)">
+            <input
+              value={recordedBy}
+              onChange={(e) => setRecordedBy(e.target.value)}
+              placeholder="cth. Holil / Josua"
+              className="v3-input"
+              style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+            />
+          </Field>
+
+          <button
+            onClick={handleConfirm}
+            disabled={!isValid}
+            className="v3-gold-bg"
+            style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem", opacity: isValid ? 1 : 0.4, cursor: isValid ? "pointer" : "not-allowed" }}
+          >
+            Konfirmasi Pelunasan {formatRupiah(piutang.sisa)}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1506,6 +1784,7 @@ function TransactionModal({ editingTx, existingPromos, onSave, onClose }) {
   const [amount, setAmount] = useState(editingTx?.amount ? String(editingTx.amount) : "");
   const [entity, setEntity] = useState(editingTx?.entity || "");
   const [duration, setDuration] = useState(editingTx?.duration ? String(editingTx.duration) : "");
+  const [totalKontrak, setTotalKontrak] = useState(editingTx?.totalKontrak ? String(editingTx.totalKontrak) : "");
   const [note, setNote] = useState(editingTx?.note || "");
   const [recordedBy, setRecordedBy] = useState(editingTx?.recordedBy || "");
   const [touched, setTouched] = useState(false);
@@ -1564,12 +1843,14 @@ function TransactionModal({ editingTx, existingPromos, onSave, onClose }) {
     else if (type === "prive") tx = { ...base, method };
     else {
       const durationNum = parseFloat(duration);
+      const totalKontrakNum = parseFloat(totalKontrak);
       const common = {
         category,
         status,
         entity: entity.trim(),
         duration: durationNum > 0 ? durationNum : null,
         promo: type === "income" ? promo.trim() : "",
+        totalKontrak: type === "income" && totalKontrakNum > 0 ? totalKontrakNum : null,
       };
       tx = splitMode
         ? { ...base, ...common, splits: splits.map((s) => ({ method: s.method, amount: parseFloat(s.amount) })) }
@@ -1770,6 +2051,30 @@ function TransactionModal({ editingTx, existingPromos, onSave, onClose }) {
             </Field>
           )}
 
+          {type === "income" && (
+            <Field label="Total Kontrak (Rp) — isi jika ada sisa yang belum dibayar">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={totalKontrak}
+                onChange={(e) => setTotalKontrak(e.target.value)}
+                placeholder="cth. 1200000 (isi jika ada DP/cicilan)"
+                className="v3-input"
+                style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
+              />
+              {totalKontrak && amountNum > 0 && parseFloat(totalKontrak) > amountNum && (
+                <p style={{ color: "#C9A227", fontSize: "0.72rem", marginTop: "0.25rem" }}>
+                  Sisa piutang: {formatRupiah(parseFloat(totalKontrak) - amountNum)} — akan muncul di panel Piutang Aktif
+                </p>
+              )}
+              {totalKontrak && parseFloat(totalKontrak) > 0 && parseFloat(totalKontrak) <= amountNum && (
+                <p style={{ color: "#D1574A", fontSize: "0.72rem", marginTop: "0.25rem" }}>
+                  Total Kontrak harus lebih besar dari Jumlah yang sudah dibayar.
+                </p>
+              )}
+            </Field>
+          )}
+
           <Field label="Catatan (opsional)">
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem", resize: "none" }} />
           </Field>
@@ -1864,154 +2169,4 @@ function SettingsModal({ initialBalances, monthlyTarget, recurringCategories, on
             ))}
           </div>
 
-          <button onClick={() => onSave(vals, target, recurring)} className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem" }}>
-            Simpan Pengaturan
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ConfirmModal({ message, onConfirm, onCancel }) {
-  return (
-    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 50, padding: "1rem" }}>
-      <div className="v3-surface" style={{ borderRadius: 16, width: "100%", maxWidth: 360, padding: "1.3rem" }}>
-        <p style={{ fontWeight: 700, marginBottom: "0.4rem" }}>{message || "Hapus item ini?"}</p>
-        <p className="v3-muted" style={{ fontSize: "0.82rem", marginBottom: "1.1rem" }}>
-          Tindakan ini tidak bisa dibatalkan.
-        </p>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="v3-surface-alt" style={{ flex: 1, borderRadius: 10, padding: "0.55rem 0", fontSize: "0.85rem", fontWeight: 600 }}>
-            Batal
-          </button>
-          <button onClick={onConfirm} style={{ flex: 1, borderRadius: 10, padding: "0.55rem 0", fontSize: "0.85rem", fontWeight: 700, background: "#D1574A", color: "#F2EFE9" }}>
-            Hapus
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReconciliationModal({ transactions, initialBalances, onSave, onClose }) {
-  const [date, setDate] = useState(todayISO());
-  const [actuals, setActuals] = useState({ Cash: "", BCA: "", Mandiri: "", BNI: "" });
-  const [recordedBy, setRecordedBy] = useState("");
-  const [note, setNote] = useState("");
-
-  const systemBalances = useMemo(
-    () => computeBalanceAsOf(transactions, initialBalances, date),
-    [transactions, initialBalances, date]
-  );
-
-  const preview = METHODS.map((m) => {
-    const raw = parseFloat(actuals[m]);
-    const actual = isNaN(raw) ? systemBalances[m] : raw;
-    return { method: m, system: systemBalances[m], actual, diff: actual - systemBalances[m] };
-  });
-  const totalDiff = preview.reduce((sum, p) => sum + p.diff, 0);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const perMethod = {};
-    preview.forEach((p) => { perMethod[p.method] = { system: p.system, actual: p.actual, diff: p.diff }; });
-    onSave({
-      id: uid(),
-      date,
-      recordedBy: recordedBy.trim(),
-      note: note.trim(),
-      perMethod,
-      totalDiff,
-      timestamp: Date.now(),
-    });
-  };
-
-  return (
-    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 50, padding: "1rem" }}>
-      <div className="v3-surface" style={{ borderRadius: 18, width: "100%", maxWidth: 440, maxHeight: "88vh", overflowY: "auto" }}>
-        <div className="flex items-center justify-between" style={{ padding: "1rem 1.2rem", borderBottom: "1px solid rgba(201,162,39,0.15)" }}>
-          <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700 }}>Rekonsiliasi Kas</p>
-          <button onClick={onClose} aria-label="Tutup"><X size={18} className="v3-muted" /></button>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
-          <p className="v3-muted" style={{ fontSize: "0.78rem" }}>
-            Hitung uang fisik & cek saldo bank, lalu masukkan jumlah aktualnya. Kosongkan kantong yang belum dicek.
-          </p>
-
-          <Field label="Tanggal">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }} />
-          </Field>
-
-          {METHODS.map((m) => {
-            const p = preview.find((x) => x.method === m);
-            return (
-              <Field key={m} label={`${m} — saldo sistem ${formatRupiah(p.system)}`}>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={actuals[m]}
-                  onChange={(e) => setActuals((v) => ({ ...v, [m]: e.target.value }))}
-                  placeholder={String(Math.round(p.system))}
-                  className="v3-input"
-                  style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}
-                />
-                {actuals[m] !== "" && Math.round(p.diff) !== 0 && (
-                  <p className="v3-mono v3-red" style={{ fontSize: "0.72rem", marginTop: "0.2rem" }}>
-                    Selisih: {formatRupiah(p.diff)}
-                  </p>
-                )}
-              </Field>
-            );
-          })}
-
-          <div className="v3-surface-alt" style={{ borderRadius: 10, padding: "0.6rem 0.8rem" }}>
-            <p className="v3-muted" style={{ fontSize: "0.72rem" }}>Total Selisih</p>
-            <p className={"v3-mono " + (Math.round(totalDiff) === 0 ? "v3-green" : "v3-red")} style={{ fontWeight: 700, fontSize: "1rem" }}>
-              {formatRupiah(totalDiff)}
-            </p>
-          </div>
-
-          <Field label="Dicatat oleh (opsional)">
-            <input value={recordedBy} onChange={(e) => setRecordedBy(e.target.value)} placeholder="cth. Holil" className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }} />
-          </Field>
-
-          <Field label="Catatan (opsional)">
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="cth. selisih karena kembalian belum dicatat" className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem", resize: "none" }} />
-          </Field>
-
-          <button type="submit" className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem", marginTop: "0.3rem" }}>
-            Simpan Rekonsiliasi
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-const FONT_IMPORTS = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');`;
-
-const CSS = `
-${FONT_IMPORTS}
-.v3-root { background:#0B0D10; color:#F2EFE9; font-family:'Inter',sans-serif; }
-.v3-display { font-family:'Oswald',sans-serif; }
-.v3-mono { font-family:'IBM Plex Mono',monospace; }
-.v3-surface { background:#15191D; border:1px solid rgba(201,162,39,0.14); }
-.v3-surface-alt { background:#1B2025; border:1px solid rgba(255,255,255,0.04); }
-.v3-muted { color:#8A9099; }
-.v3-gold { color:#C9A227; }
-.v3-gold-bg { background:#C9A227; color:#0B0D10; border:none; cursor:pointer; }
-.v3-gold-bg:hover { background:#DDB740; }
-.v3-green { color:#4CAF61; }
-.v3-red { color:#D1574A; }
-.v3-overlay { background:rgba(6,7,8,0.78); }
-.v3-input { background:#0F1216; border:1px solid rgba(201,162,39,0.2); color:#F2EFE9; }
-.v3-input:focus { outline:none; border-color:#C9A227; }
-.v3-scroll::-webkit-scrollbar { height:6px; }
-.v3-scroll::-webkit-scrollbar-thumb { background:rgba(201,162,39,0.4); border-radius:3px; }
-button { font-family:inherit; }
-*:focus-visible { outline:2px solid #C9A227; outline-offset:2px; }
-@keyframes spin { from { transform:rotate(0deg);} to { transform:rotate(360deg);} }
-@media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
-`;
+          <button 
