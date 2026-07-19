@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -17,6 +17,8 @@ import { subscribeAuth, getUserProfile, logout as authLogout } from "./auth.js";
 import Login from "./Login.jsx";
 import UserManager from "./UserManager.jsx";
 import ConsolidatedDashboard from "./ConsolidatedDashboard.jsx";
+import Membership from "./Membership.jsx";
+import Payroll from "./Payroll.jsx";
 import { storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY } from "./storageKeys.js";
 
 function getAccessibleUnits(profile) {
@@ -489,6 +491,28 @@ export default function App() {
     });
     setShowForm(false);
     setEditingTx(null);
+  };
+
+  // Dipakai modul Membership untuk otomatis mencatat pembayaran (daftar/perpanjangan)
+  // sebagai transaksi income, tanpa admin harus input manual dua kali.
+  const handleRecordPayment = ({ amount, category, method, date, entity, note }) => {
+    setTransactions((prev) => {
+      const tx = {
+        id: uid(),
+        type: "income",
+        date,
+        amount,
+        category,
+        entity,
+        method,
+        status: "Lunas",
+        note,
+        recordedBy: profile?.name || "",
+      };
+      const next = [...prev, tx];
+      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      return next;
+    });
   };
 
   const handleConfirmDelete = () => {
@@ -2114,6 +2138,24 @@ export default function App() {
           />
         )}
 
+        {activeTab === "membership" && unitConfig.hasMembership && (
+          <Membership
+            unitId={unitId}
+            membershipClasses={unitConfig.membershipClasses || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+          />
+        )}
+
+        {activeTab === "payroll" && unitConfig.hasPayroll && (
+          <Payroll
+            unitId={unitId}
+            classCommissionRates={unitConfig.classCommissionRates || {}}
+            canEdit={canEdit}
+          />
+        )}
+
         <p className="v3-muted" style={{ fontSize: "0.7rem", textAlign: "center", marginTop: "2rem" }}>
           {unitConfig.name} &middot; {unitConfig.tagline}
         </p>
@@ -2128,6 +2170,8 @@ export default function App() {
           ["dashboard", "Dashboard", LayoutDashboard],
           ["transaksi", "Transaksi", ListChecks],
           ["laporan", "Laporan", BarChart3],
+          ...(unitConfig.hasMembership ? [["membership", "Member", UserCheck]] : []),
+          ...(unitConfig.hasPayroll ? [["payroll", "Payroll", Wallet]] : []),
           ["ceksaldo", "Cek Saldo", ShieldCheck],
         ].map(([key, label, TabIcon]) => (
           <button

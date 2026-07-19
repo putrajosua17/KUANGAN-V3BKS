@@ -34,6 +34,8 @@ export const UNITS = [
     ],
     recurringCategories: ["Gaji Karyawan", "Listrik", "Air", "Wifi", "Telkomsel", "Pajak"],
     rentalCategoryForTax: "Rental",
+    hasMembership: false,
+    hasPayroll: false,
     breakeven: {
       fixedCost: 58800000,
       variableCostPerHour: 70000,
@@ -72,6 +74,8 @@ export const UNITS = [
     ],
     recurringCategories: ["Gaji Karyawan", "Wifi", "Telkomsel", "Pajak"],
     rentalCategoryForTax: null, // ada 2 kategori rental (Badminton & Padel) — dihitung manual di Laporan
+    hasMembership: false,
+    hasPayroll: false,
     breakeven: null,
   },
   {
@@ -100,6 +104,27 @@ export const UNITS = [
     recurringCategories: ["Gaji Karyawan & Coach", "Sewa", "Pajak"],
     rentalCategoryForTax: null,
     breakeven: null,
+    hasMembership: true,
+    hasPayroll: true,
+    // Dipakai modul Membership: jenis kelas yang dijual sebagai paket membership.
+    membershipClasses: [
+      "Calisthenic", "Strength & Conditioning", "Boxing", "Muay Thai",
+      "Hyrox", "Barre Intensity", "Mix Class",
+    ],
+    // Dipakai modul Payroll: persentase komisi coach per jenis kelas (dari revenue kelas).
+    // Kelas dengan komisi 0 (Muay Thai, Hyrox, Booty & Core) memakai skema fee flat lewat
+    // kategori expense "Reguler Hyrox & Private FG", bukan persentase — tetap dicatat
+    // di sini sebagai referensi, admin bisa sesuaikan manual di attendance kalau perlu.
+    classCommissionRates: {
+      "Calisthenic": 40,
+      "Strength & Conditioning": 30,
+      "Boxing": 30,
+      "Muay Thai": 0,
+      "Hyrox": 0,
+      "Barre Intensity": 60,
+      "Booty & Core": 0,
+      "Mix Class": 40,
+    },
   },
 ];
 

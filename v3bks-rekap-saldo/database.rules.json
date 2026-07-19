@@ -50,6 +50,14 @@
     "v3bks_templates__sports-studio": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_membership__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_payroll__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
     }
   }
 }

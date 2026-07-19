@@ -100,3 +100,18 @@ Konfigurasi tiap unit (kantong/rekening, kategori income & expense, target break
 ada di `src/unitsConfig.js`. Untuk menambah unit bisnis baru di masa depan, tambahkan
 satu objek baru di array `UNITS` pada file itu, lalu tambahkan juga aturan keamanan yang
 sesuai di `database.rules.json` (ikuti pola yang sudah ada untuk unit lain).
+
+## Modul Membership & Payroll Coach (HSC Sports Studio)
+
+Khusus unit **HSC Sports Studio**, ada 2 tab tambahan di bottom navigation:
+
+- **Member** — daftar member paket (Calisthenic, Hyrox, Boxing, dst.), melacak sisa sesi
+  & masa berlaku, dengan peringatan otomatis untuk member yang akan/sudah expired.
+  Pendaftaran & perpanjangan member bisa langsung dicatat sebagai transaksi income di
+  modul Keuangan (centang "Catat sebagai transaksi income" di form).
+- **Payroll** — rekap kehadiran per coach per kelas, komisi dihitung otomatis sesuai
+  tarif per jenis kelas (diatur di `classCommissionRates` pada `src/unitsConfig.js`),
+  ditambah kasbon/bonus, sampai ke ringkasan payout siap transfer per bulan.
+
+Kedua modul ini bisa diaktifkan/nonaktifkan per unit lewat flag `hasMembership` dan
+`hasPayroll` di `src/unitsConfig.js`.
