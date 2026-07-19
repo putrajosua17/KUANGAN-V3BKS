@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -19,6 +19,7 @@ import UserManager from "./UserManager.jsx";
 import ConsolidatedDashboard from "./ConsolidatedDashboard.jsx";
 import Membership from "./Membership.jsx";
 import Payroll from "./Payroll.jsx";
+import Booking from "./Booking.jsx";
 import { storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY } from "./storageKeys.js";
 
 function getAccessibleUnits(profile) {
@@ -493,9 +494,9 @@ export default function App() {
     setEditingTx(null);
   };
 
-  // Dipakai modul Membership untuk otomatis mencatat pembayaran (daftar/perpanjangan)
-  // sebagai transaksi income, tanpa admin harus input manual dua kali.
-  const handleRecordPayment = ({ amount, category, method, date, entity, note }) => {
+  // Dipakai modul Membership & Booking untuk otomatis mencatat pembayaran sebagai
+  // transaksi income, tanpa admin harus input manual dua kali.
+  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration }) => {
     setTransactions((prev) => {
       const tx = {
         id: uid(),
@@ -507,6 +508,7 @@ export default function App() {
         method,
         status: "Lunas",
         note,
+        duration,
         recordedBy: profile?.name || "",
       };
       const next = [...prev, tx];
@@ -2138,6 +2140,16 @@ export default function App() {
           />
         )}
 
+        {activeTab === "jadwal" && unitConfig.hasBooking && (
+          <Booking
+            unitId={unitId}
+            bookingGroups={unitConfig.bookingGroups || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+          />
+        )}
+
         {activeTab === "membership" && unitConfig.hasMembership && (
           <Membership
             unitId={unitId}
@@ -2168,6 +2180,7 @@ export default function App() {
       >
         {[
           ["dashboard", "Dashboard", LayoutDashboard],
+          ...(unitConfig.hasBooking ? [["jadwal", "Jadwal", CalendarDays]] : []),
           ["transaksi", "Transaksi", ListChecks],
           ["laporan", "Laporan", BarChart3],
           ...(unitConfig.hasMembership ? [["membership", "Member", UserCheck]] : []),

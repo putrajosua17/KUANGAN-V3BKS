@@ -36,6 +36,25 @@ export const UNITS = [
     rentalCategoryForTax: "Rental",
     hasMembership: false,
     hasPayroll: false,
+    hasBooking: true,
+    // Dipakai modul Jadwal & Booking: kelompok resource yang bisa disewa, jam operasional,
+    // dan harga per jam (weekday/weekend) per rentang jam. Harga dijumlah per jam yang
+    // dicakup booking, jadi booking yang melintasi 2 rentang otomatis dihitung gabungan.
+    bookingGroups: [
+      {
+        id: "lapangan",
+        label: "Lapangan",
+        resources: ["Lapangan"],
+        startHour: 7,
+        endHour: 24,
+        incomeCategory: "Rental",
+        priceBands: [
+          { start: 7, end: 16, weekdayRate: 600000, weekendRate: 720000 },
+          { start: 16, end: 18, weekdayRate: 800000, weekendRate: 960000 },
+          { start: 18, end: 24, weekdayRate: 960000, weekendRate: 1040000 },
+        ],
+      },
+    ],
     breakeven: {
       fixedCost: 58800000,
       variableCostPerHour: 70000,
@@ -76,6 +95,35 @@ export const UNITS = [
     rentalCategoryForTax: null, // ada 2 kategori rental (Badminton & Padel) — dihitung manual di Laporan
     hasMembership: false,
     hasPayroll: false,
+    hasBooking: true,
+    bookingGroups: [
+      {
+        id: "badminton",
+        label: "Badminton",
+        resources: ["Lap. 1", "Lap. 2", "Lap. 3", "Lap. 4", "Lap. 5"],
+        startHour: 7,
+        endHour: 24,
+        incomeCategory: "Rental Badminton",
+        priceBands: [
+          { start: 7, end: 16, weekdayRate: 50000, weekendRate: 60000 },
+          { start: 16, end: 18, weekdayRate: 75000, weekendRate: 80000 },
+          { start: 18, end: 24, weekdayRate: 90000, weekendRate: 100000 },
+        ],
+      },
+      {
+        id: "padel",
+        label: "Padel",
+        resources: ["Padel"],
+        startHour: 7,
+        endHour: 24,
+        incomeCategory: "Rental Padel",
+        priceBands: [
+          { start: 7, end: 15, weekdayRate: 189000, weekendRate: 189000 },
+          { start: 15, end: 18, weekdayRate: 252000, weekendRate: 252000 },
+          { start: 18, end: 24, weekdayRate: 279000, weekendRate: 279000 },
+        ],
+      },
+    ],
     breakeven: null,
   },
   {
@@ -106,6 +154,7 @@ export const UNITS = [
     breakeven: null,
     hasMembership: true,
     hasPayroll: true,
+    hasBooking: false,
     // Dipakai modul Membership: jenis kelas yang dijual sebagai paket membership.
     membershipClasses: [
       "Calisthenic", "Strength & Conditioning", "Boxing", "Muay Thai",

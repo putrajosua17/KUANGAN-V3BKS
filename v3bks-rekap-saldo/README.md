@@ -115,3 +115,21 @@ Khusus unit **HSC Sports Studio**, ada 2 tab tambahan di bottom navigation:
 
 Kedua modul ini bisa diaktifkan/nonaktifkan per unit lewat flag `hasMembership` dan
 `hasPayroll` di `src/unitsConfig.js`.
+
+## Modul Jadwal & Booking (Mini Soccer, Badminton & Padel)
+
+Menggantikan grid Excel manual (Putih=Kosong, Kuning=Booked/DP, Biru=Lunas,
+Merah=Maintenance). Muncul sebagai tab **Jadwal** untuk unit yang punya lapangan/court:
+
+- Kalender per jam (07.00–24.00) per lapangan/court, klik sel kosong untuk booking baru,
+  klik sel terisi untuk lihat/edit/hapus.
+- Harga disarankan otomatis dari `priceBands` di `src/unitsConfig.js` (beda tarif
+  weekday/weekend, dijumlah per jam kalau booking melintasi 2 rentang harga) — admin
+  tetap bisa mengubah nominal sebelum simpan.
+- Cek bentrok otomatis: tidak bisa booking di lapangan & jam yang sudah terisi.
+- Bisa langsung mencatat pembayaran sebagai transaksi income di modul Keuangan (sama
+  seperti modul Membership).
+- Unit dengan lebih dari 1 kelompok resource (mis. HSC Badminton & Padel) menampilkan
+  tab pemilih kelompok (`bookingGroups` di `src/unitsConfig.js`) di atas kalender.
+
+Modul ini diaktifkan lewat flag `hasBooking` + konfigurasi `bookingGroups` per unit.

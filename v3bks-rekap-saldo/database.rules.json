@@ -25,6 +25,10 @@
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
     },
+    "v3bks_bookings__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
     "v3bks_finance_data": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
@@ -39,6 +43,10 @@
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
     },
     "v3bks_templates__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_bookings__badminton-padel": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
     },
