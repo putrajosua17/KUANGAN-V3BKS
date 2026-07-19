@@ -108,12 +108,16 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
     const next = exists ? bookings.map((b) => (b.id === booking.id ? booking : b)) : [...bookings, booking];
     persist(next);
     if (!exists && booking.recordPayment && booking.status !== "Maintenance" && booking.amount > 0 && onRecordPayment) {
+      // Booking DP (belum lunas) tetap mengisi jadwal (cek bentrok di atas berlaku untuk
+      // semua status) — status transaksi di Keuangan ikut status booking apa adanya,
+      // supaya DP tidak tercatat seolah-olah sudah lunas di Cek Saldo/Laporan.
       onRecordPayment({
         amount: booking.amount,
         category: group.incomeCategory || `Rental ${group.label}`,
         method: booking.method,
         date: booking.date,
         entity: booking.clientName,
+        status: booking.status,
         note: `${group.label} ${booking.resource} · ${hourLabel(booking.startHour)}-${hourLabel(booking.startHour + booking.durationHours)}`,
         duration: booking.durationHours,
       });

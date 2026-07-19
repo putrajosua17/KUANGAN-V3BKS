@@ -502,7 +502,7 @@ export default function App() {
 
   // Dipakai modul Membership & Booking untuk otomatis mencatat pembayaran sebagai
   // transaksi income, tanpa admin harus input manual dua kali.
-  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration }) => {
+  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration, status }) => {
     setTransactions((prev) => {
       const tx = {
         id: uid(),
@@ -512,7 +512,7 @@ export default function App() {
         category,
         entity,
         method,
-        status: "Lunas",
+        status: status || "Lunas",
         note,
         duration,
         recordedBy: profile?.name || "",
