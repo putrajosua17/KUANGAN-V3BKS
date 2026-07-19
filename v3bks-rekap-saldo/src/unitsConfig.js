@@ -38,6 +38,7 @@ export const UNITS = [
     hasPayroll: false,
     hasBooking: true,
     hasInventory: false,
+    hasPos: true,
     // Dipakai modul Jadwal & Booking: kelompok resource yang bisa disewa, jam operasional,
     // dan harga per jam (weekday/weekend) per rentang jam. Harga dijumlah per jam yang
     // dicakup booking, jadi booking yang melintasi 2 rentang otomatis dihitung gabungan.
@@ -97,6 +98,7 @@ export const UNITS = [
     hasMembership: false,
     hasPayroll: false,
     hasBooking: true,
+    hasPos: true,
     bookingGroups: [
       {
         id: "badminton",
@@ -172,6 +174,7 @@ export const UNITS = [
     hasPayroll: true,
     hasBooking: false,
     hasInventory: false,
+    hasPos: true,
     // Dipakai modul Membership: jenis kelas yang dijual sebagai paket membership.
     membershipClasses: [
       "Calisthenic", "Strength & Conditioning", "Boxing", "Muay Thai",

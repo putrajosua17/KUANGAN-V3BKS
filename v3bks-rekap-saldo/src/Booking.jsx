@@ -14,11 +14,11 @@ function formatRupiah(n) {
   const num = Number(n) || 0;
   return "Rp" + Math.round(Math.abs(num)).toLocaleString("id-ID");
 }
-function isWeekend(dateStr) {
+export function isWeekend(dateStr) {
   const day = new Date(dateStr + "T00:00:00").getDay();
   return day === 0 || day === 6;
 }
-function hourLabel(h) {
+export function hourLabel(h) {
   const hh = h % 24;
   return `${String(hh).padStart(2, "0")}.00`;
 }
@@ -27,7 +27,8 @@ function shiftDate(dateStr, deltaDays) {
   d.setDate(d.getDate() + deltaDays);
   return d.toISOString().slice(0, 10);
 }
-function suggestPrice(group, dateStr, startHour, durationHours) {
+// Diekspor karena modul Kasir memakai perhitungan harga per jam yang sama.
+export function suggestPrice(group, dateStr, startHour, durationHours) {
   const weekend = isWeekend(dateStr);
   const start = Number(startHour) || 0;
   const duration = Number(durationHours) || 0;

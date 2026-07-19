@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -21,6 +21,7 @@ import Membership from "./Membership.jsx";
 import Payroll from "./Payroll.jsx";
 import Booking from "./Booking.jsx";
 import Inventory from "./Inventory.jsx";
+import Kasir from "./Kasir.jsx";
 import {
   storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY,
   membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor,
@@ -517,6 +518,31 @@ export default function App() {
         recordedBy: profile?.name || "",
       };
       const next = [...prev, tx];
+      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      return next;
+    });
+  };
+
+  // Dipakai modul Kasir: satu struk berisi beberapa item, semua tercatat sekaligus
+  // sebagai transaksi income terpisah per item (supaya laporan per kategori tetap
+  // akurat) dengan receiptId yang sama sebagai pengikat satu pembayaran.
+  const handleRecordReceipt = (entries) => {
+    setTransactions((prev) => {
+      const txs = entries.map((en) => ({
+        id: uid(),
+        type: "income",
+        date: en.date,
+        amount: en.amount,
+        category: en.category,
+        entity: en.entity || "",
+        method: en.method,
+        status: en.status || "Lunas",
+        note: en.note,
+        ...(en.duration ? { duration: en.duration } : {}),
+        receiptId: en.receiptId,
+        recordedBy: profile?.name || "",
+      }));
+      const next = [...prev, ...txs];
       persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
       return next;
     });
@@ -2263,6 +2289,15 @@ export default function App() {
           />
         )}
 
+        {activeTab === "kasir" && unitConfig.hasPos && canEdit && (
+          <Kasir
+            unitId={unitId}
+            unitConfig={unitConfig}
+            canEdit={canEdit}
+            onRecordReceipt={handleRecordReceipt}
+          />
+        )}
+
         {activeTab === "jadwal" && unitConfig.hasBooking && (
           <Booking
             unitId={unitId}
@@ -2314,6 +2349,7 @@ export default function App() {
       >
         {[
           ["dashboard", "Dashboard", LayoutDashboard],
+          ...(unitConfig.hasPos && canEdit ? [["kasir", "Kasir", ShoppingCart]] : []),
           ...(unitConfig.hasBooking ? [["jadwal", "Jadwal", CalendarDays]] : []),
           ["transaksi", "Transaksi", ListChecks],
           ["laporan", "Laporan", BarChart3],
@@ -2338,8 +2374,8 @@ export default function App() {
 
       {/* AI Assistant dihapus */}
 
-      {/* Mobile FAB */}
-      {canEdit && (
+      {/* Mobile FAB — disembunyikan di tab Kasir karena bar keranjang memakai posisi yang sama */}
+      {canEdit && activeTab !== "kasir" && (
         <button
           onClick={() => { setEditingTx(null); setShowForm(true); }}
           className="v3-gold-bg md:hidden flex items-center justify-center"

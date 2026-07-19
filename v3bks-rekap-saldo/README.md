@@ -152,6 +152,31 @@ sebagai tab **Stok** untuk unit yang punya barang jual/sewa:
 
 Modul ini diaktifkan lewat flag `hasInventory` + konfigurasi `inventoryItems` per unit.
 
+## Modul Kasir (POS) — semua unit
+
+Input transaksi bergaya aplikasi kasir: tap tombol menu → keranjang → bayar. Muncul
+sebagai tab **Kasir** (khusus Admin/Finance) di semua unit:
+
+- **Menu bebas dikustom** lewat tombol "Atur Menu": tambah/ubah/hapus grup & item,
+  harga, kategori income, warna tombol, aktif/nonaktif. Menu awal di-seed otomatis dari
+  konfigurasi unit (lapangan dari `bookingGroups`, add-ons dari `inventoryItems`, jasa
+  dari kategori income) — item berharga 0 akan menanyakan harga saat di-tap.
+- **Item lapangan (per jam)**: kasir menanyakan tanggal, lapangan, jam, durasi — harga
+  otomatis dari price band (weekday/weekend), **cek bentrok** terhadap kalender Jadwal,
+  dan slot jadwal ikut terisi otomatis saat bayar. Satu input, dua hasil.
+- **Item tertaut Stok**: stok otomatis terpotong saat terjual (tombol menu juga
+  menampilkan sisa stok).
+- **Checkout**: kantong pembayaran, status Lunas/DP, nama pelanggan, **diskon per
+  struk** (Rp atau %) — diskon dialokasikan proporsional per item supaya laporan per
+  kategori tetap sama persis dengan uang yang diterima.
+- **Struk digital**: tersimpan di riwayat, bisa dibuka ulang, dan ada tombol
+  **"Salin untuk WhatsApp"** untuk dikirim ke pelanggan.
+- Setiap item struk tercatat sebagai transaksi income dengan kategori masing-masing
+  (diikat satu nomor struk), jadi Dashboard, Laporan, pajak, export, dan backup ikut
+  otomatis tanpa perubahan apa pun.
+
+Modul ini diaktifkan lewat flag `hasPos` per unit di `src/unitsConfig.js`.
+
 ## Fase 5: Laporan Pajak, Backup Data & Keamanan Login
 
 - **Laporan Pajak Siap Lapor** — tombol Export ke Excel (ikon unduh di header) sekarang
