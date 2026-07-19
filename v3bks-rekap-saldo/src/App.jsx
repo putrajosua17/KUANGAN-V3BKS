@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -20,6 +20,7 @@ import ConsolidatedDashboard from "./ConsolidatedDashboard.jsx";
 import Membership from "./Membership.jsx";
 import Payroll from "./Payroll.jsx";
 import Booking from "./Booking.jsx";
+import Inventory from "./Inventory.jsx";
 import { storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY } from "./storageKeys.js";
 
 function getAccessibleUnits(profile) {
@@ -509,6 +510,26 @@ export default function App() {
         status: "Lunas",
         note,
         duration,
+        recordedBy: profile?.name || "",
+      };
+      const next = [...prev, tx];
+      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      return next;
+    });
+  };
+
+  // Dipakai modul Stok Barang untuk otomatis mencatat pembelian stok sebagai transaksi
+  // expense, tanpa admin harus input manual dua kali.
+  const handleRecordExpense = ({ amount, category, method, date, note }) => {
+    setTransactions((prev) => {
+      const tx = {
+        id: uid(),
+        type: "expense",
+        date,
+        amount,
+        category,
+        method,
+        note,
         recordedBy: profile?.name || "",
       };
       const next = [...prev, tx];
@@ -2150,6 +2171,17 @@ export default function App() {
           />
         )}
 
+        {activeTab === "stok" && unitConfig.hasInventory && (
+          <Inventory
+            unitId={unitId}
+            defaultItems={unitConfig.inventoryItems || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+            onRecordExpense={handleRecordExpense}
+          />
+        )}
+
         {activeTab === "membership" && unitConfig.hasMembership && (
           <Membership
             unitId={unitId}
@@ -2185,6 +2217,7 @@ export default function App() {
           ["laporan", "Laporan", BarChart3],
           ...(unitConfig.hasMembership ? [["membership", "Member", UserCheck]] : []),
           ...(unitConfig.hasPayroll ? [["payroll", "Payroll", Wallet]] : []),
+          ...(unitConfig.hasInventory ? [["stok", "Stok", Package]] : []),
           ["ceksaldo", "Cek Saldo", ShieldCheck],
         ].map(([key, label, TabIcon]) => (
           <button

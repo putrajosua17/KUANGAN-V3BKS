@@ -133,3 +133,21 @@ Merah=Maintenance). Muncul sebagai tab **Jadwal** untuk unit yang punya lapangan
   tab pemilih kelompok (`bookingGroups` di `src/unitsConfig.js`) di atas kalender.
 
 Modul ini diaktifkan lewat flag `hasBooking` + konfigurasi `bookingGroups` per unit.
+
+## Modul Stok Barang (HSC Badminton & Padel)
+
+Menggantikan pencatatan stok manual (shuttlecock, grip, raket, bola padel, dst.). Muncul
+sebagai tab **Stok** untuk unit yang punya barang jual/sewa:
+
+- Daftar item stok (nama, satuan, harga satuan, batas stok menipis) — bisa
+  tambah/ubah/hapus item lewat menu Admin. Item default per unit diatur di
+  `inventoryItems` pada `src/unitsConfig.js`, otomatis di-seed saat pertama kali dibuka.
+- Saldo stok dihitung otomatis dari riwayat mutasi (stok masuk − stok keluar), tidak perlu
+  hitung manual.
+- Peringatan otomatis untuk item yang stoknya sudah di/bawah batas menipis.
+- Stok masuk (beli/restock) bisa langsung dicatat sebagai transaksi expense, dan stok
+  keluar (terjual/dipakai) bisa langsung dicatat sebagai transaksi income di modul
+  Keuangan (centang opsi pencatatan di form mutasi) — nominal otomatis terisi dari
+  kuantitas × harga satuan, tetap bisa diubah manual sebelum simpan.
+
+Modul ini diaktifkan lewat flag `hasInventory` + konfigurasi `inventoryItems` per unit.

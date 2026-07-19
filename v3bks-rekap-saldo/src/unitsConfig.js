@@ -37,6 +37,7 @@ export const UNITS = [
     hasMembership: false,
     hasPayroll: false,
     hasBooking: true,
+    hasInventory: false,
     // Dipakai modul Jadwal & Booking: kelompok resource yang bisa disewa, jam operasional,
     // dan harga per jam (weekday/weekend) per rentang jam. Harga dijumlah per jam yang
     // dicakup booking, jadi booking yang melintasi 2 rentang otomatis dihitung gabungan.
@@ -124,6 +125,21 @@ export const UNITS = [
         ],
       },
     ],
+    hasInventory: true,
+    // Dipakai modul Stok Barang: item default yang di-seed pertama kali dibuka (admin
+    // bisa tambah/ubah/hapus setelahnya). incomeCategory/expenseCategory dipakai saat
+    // stok keluar (terjual) / stok masuk (beli) dicatat sebagai transaksi otomatis.
+    inventoryItems: [
+      { id: "shuttlecock-hijau", name: "Shuttlecock Ganesha Hijau", unit: "slop", unitPrice: 140000, lowStockThreshold: 5, incomeCategory: "Shuttlecock", expenseCategory: "Stok Shuttlecock" },
+      { id: "shuttlecock-hitam", name: "Shuttlecock Ganesha Hitam", unit: "slop", unitPrice: 130000, lowStockThreshold: 5, incomeCategory: "Shuttlecock", expenseCategory: "Stok Shuttlecock" },
+      { id: "shuttlecock-harmonika", name: "Shuttlecock Harmonika", unit: "slop", unitPrice: 120000, lowStockThreshold: 5, incomeCategory: "Shuttlecock", expenseCategory: "Stok Shuttlecock" },
+      { id: "grip-handuk", name: "Grip Handuk", unit: "pcs", unitPrice: 6000, lowStockThreshold: 10, incomeCategory: "Grip Badminton", expenseCategory: "Stok Grip" },
+      { id: "grip-karet", name: "Grip Karet", unit: "pcs", unitPrice: 11000, lowStockThreshold: 10, incomeCategory: "Grip Badminton", expenseCategory: "Stok Grip" },
+      { id: "kaos-kaki", name: "Kaos Kaki", unit: "pcs", unitPrice: 45000, lowStockThreshold: 5, incomeCategory: "Kaos Kaki Badminton", expenseCategory: "Stok Kaos Kaki" },
+      { id: "raket-badminton", name: "Raket Badminton (sewa)", unit: "pcs", unitPrice: 20000, lowStockThreshold: 3, incomeCategory: "Sewa Raket Badminton", expenseCategory: "Stok Raket" },
+      { id: "bola-padel", name: "Bola Padel", unit: "tabung", unitPrice: 85000, lowStockThreshold: 3, incomeCategory: "Bola Padel", expenseCategory: "Stok Bola Padel" },
+      { id: "grip-padel", name: "Grip Padel", unit: "pcs", unitPrice: 45000, lowStockThreshold: 5, incomeCategory: "Grip Padel", expenseCategory: "Stok Grip" },
+    ],
     breakeven: null,
   },
   {
@@ -155,6 +171,7 @@ export const UNITS = [
     hasMembership: true,
     hasPayroll: true,
     hasBooking: false,
+    hasInventory: false,
     // Dipakai modul Membership: jenis kelas yang dijual sebagai paket membership.
     membershipClasses: [
       "Calisthenic", "Strength & Conditioning", "Boxing", "Muay Thai",

@@ -4,6 +4,7 @@ export function templatesKeyFor(unitId) { return `v3bks_templates__${unitId}`; }
 export function membershipKeyFor(unitId) { return `v3bks_membership__${unitId}`; }
 export function payrollKeyFor(unitId) { return `v3bks_payroll__${unitId}`; }
 export function bookingKeyFor(unitId) { return `v3bks_bookings__${unitId}`; }
+export function inventoryKeyFor(unitId) { return `v3bks_inventory__${unitId}`; }
 
 // Key lama sebelum aplikasi ini mendukung multi-unit — dipakai V3BKS Mini Soccer saja.
 // Data di key ini otomatis dipindahkan (sekali) ke key baru supaya tidak hilang.

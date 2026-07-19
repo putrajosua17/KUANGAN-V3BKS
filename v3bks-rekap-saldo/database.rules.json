@@ -50,6 +50,10 @@
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
     },
+    "v3bks_inventory__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
 
     "v3bks_finance_data__sports-studio": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
