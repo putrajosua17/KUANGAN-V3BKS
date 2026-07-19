@@ -18,6 +18,7 @@ import {
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getDatabase, ref, get, set, update, remove } from "firebase/database";
@@ -36,6 +37,20 @@ export async function login(email, password) {
 
 export async function logout() {
   await signOut(auth);
+}
+
+export async function resetPassword(email) {
+  await withTimeout(sendPasswordResetEmail(auth, email.trim()));
+}
+
+// Dipanggil sekali tiap kali login berhasil. Best-effort saja — kalau gagal (mis. timeout),
+// tidak boleh menghalangi user masuk ke aplikasi, jadi error-nya sengaja ditelan di sini.
+export async function recordLastLogin(uid) {
+  try {
+    await withTimeout(update(ref(db, `users/${uid}`), { lastLoginAt: Date.now() }));
+  } catch {
+    // diamkan — bukan operasi kritis
+  }
 }
 
 export async function getUserProfile(uid) {

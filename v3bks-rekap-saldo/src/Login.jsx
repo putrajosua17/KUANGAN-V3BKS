@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Loader2, LogIn, ShieldCheck, UserPlus } from "lucide-react";
-import { anyUsersExist, createFirstAdmin, login, mapAuthError } from "./auth.js";
+import { Loader2, LogIn, ShieldCheck, UserPlus, KeyRound } from "lucide-react";
+import { anyUsersExist, createFirstAdmin, login, mapAuthError, resetPassword } from "./auth.js";
 
 export default function Login() {
   const [checking, setChecking] = useState(true);
@@ -10,6 +10,9 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   useEffect(() => {
     anyUsersExist()
@@ -43,10 +46,90 @@ export default function Login() {
     }
   };
 
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!email.trim()) {
+      setError("Masukkan email Anda terlebih dahulu.");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (err) {
+      setError(mapAuthError(err));
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   if (checking) {
     return (
       <div className="v3-root flex items-center justify-center" style={{ minHeight: "100vh" }}>
         <Loader2 className="v3-gold animate-spin" size={28} />
+      </div>
+    );
+  }
+
+  if (forgotMode) {
+    return (
+      <div className="v3-root flex items-center justify-center" style={{ minHeight: "100vh", padding: "1.2rem" }}>
+        <div className="v3-surface" style={{ width: "100%", maxWidth: 380, borderRadius: 20, padding: "1.8rem 1.6rem" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: "0.3rem" }}>
+            <KeyRound size={18} className="v3-gold" />
+            <p className="v3-display v3-gold" style={{ fontSize: "1.1rem", fontWeight: 700, letterSpacing: "0.03em" }}>
+              Lupa Password
+            </p>
+          </div>
+
+          {resetSent ? (
+            <p style={{ fontSize: "0.82rem", lineHeight: 1.5, marginTop: "1rem" }}>
+              Kalau email <strong>{email}</strong> terdaftar, kami sudah mengirim link untuk membuat
+              password baru. Cek inbox (atau folder spam) lalu ikuti link tersebut.
+            </p>
+          ) : (
+            <>
+              <p className="v3-muted" style={{ fontSize: "0.78rem", marginBottom: "1.2rem" }}>
+                Masukkan email akun Anda. Kami akan kirim link reset password.
+              </p>
+              <form onSubmit={handleResetPassword} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+                <label style={{ display: "block" }}>
+                  <span className="v3-muted" style={{ fontSize: "0.72rem", display: "block", marginBottom: "0.3rem" }}>Email</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="v3-input"
+                    style={{ borderRadius: 8, padding: "0.6rem 0.7rem", width: "100%", fontSize: "0.88rem" }}
+                    placeholder="nama@email.com"
+                    autoComplete="username"
+                    required
+                  />
+                </label>
+                {error && <p style={{ color: "#D1574A", fontSize: "0.78rem" }}>{error}</p>}
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="v3-gold-bg flex items-center justify-center gap-2"
+                  style={{ borderRadius: 10, padding: "0.7rem 0", fontWeight: 700, fontSize: "0.9rem", opacity: resetLoading ? 0.7 : 1 }}
+                >
+                  {resetLoading ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
+                  Kirim Link Reset
+                </button>
+              </form>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => { setForgotMode(false); setResetSent(false); setError(""); }}
+            className="v3-muted"
+            style={{ display: "block", width: "100%", textAlign: "center", marginTop: "1.1rem", fontSize: "0.78rem", background: "none", border: "none", cursor: "pointer" }}
+          >
+            &larr; Kembali ke halaman login
+          </button>
+        </div>
       </div>
     );
   }
@@ -115,6 +198,17 @@ export default function Login() {
 
           {error && (
             <p style={{ color: "#D1574A", fontSize: "0.78rem" }}>{error}</p>
+          )}
+
+          {!bootstrap && (
+            <button
+              type="button"
+              onClick={() => { setForgotMode(true); setError(""); }}
+              className="v3-gold"
+              style={{ alignSelf: "flex-end", fontSize: "0.74rem", background: "none", border: "none", cursor: "pointer", marginTop: "-0.4rem" }}
+            >
+              Lupa password?
+            </button>
           )}
 
           <button

@@ -97,6 +97,9 @@ export default function UserManager({ currentUid, onClose }) {
                     {ROLE_LABEL[u.role] || u.role}
                     {u.role !== "admin" && u.units ? " · " + Object.keys(u.units).map((id) => UNITS.find((x) => x.id === id)?.shortName || id).join(", ") : ""}
                   </p>
+                  <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.15rem" }}>
+                    Login terakhir: {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "belum pernah"}
+                  </p>
                 </div>
                 <button onClick={() => handleDelete(u)} aria-label="Hapus pengguna" style={{ flexShrink: 0 }}>
                   <Trash2 size={15} className="v3-muted" />

@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { UNITS, getUnit } from "./unitsConfig.js";
 import { UnitConfigProvider, useUnitConfig } from "./unitConfigContext.jsx";
-import { subscribeAuth, getUserProfile, logout as authLogout } from "./auth.js";
+import { subscribeAuth, getUserProfile, logout as authLogout, recordLastLogin } from "./auth.js";
 import Login from "./Login.jsx";
 import UserManager from "./UserManager.jsx";
 import ConsolidatedDashboard from "./ConsolidatedDashboard.jsx";
@@ -21,7 +21,10 @@ import Membership from "./Membership.jsx";
 import Payroll from "./Payroll.jsx";
 import Booking from "./Booking.jsx";
 import Inventory from "./Inventory.jsx";
-import { storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY } from "./storageKeys.js";
+import {
+  storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY,
+  membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor,
+} from "./storageKeys.js";
 
 function getAccessibleUnits(profile) {
   if (!profile) return [];
@@ -310,6 +313,7 @@ export default function App() {
         try {
           const p = await getUserProfile(u.uid);
           setProfile(p);
+          recordLastLogin(u.uid);
         } catch (e) {
           setProfile(null);
         } finally {
@@ -717,13 +721,76 @@ export default function App() {
         }))
       : [{ Catatan: "Tidak ada piutang non-bisnis" }];
 
+    const taxRows = [
+      ...taxMonthlyData.map((r) => ({
+        Bulan: r.label,
+        Omzet: r.omzet,
+        "PPh Final 0,5%": Math.round(r.pphFinal),
+        "Income Rental": r.rentalIncome,
+        "Pajak Daerah 10%": Math.round(r.pajakDaerah),
+      })),
+      {
+        Bulan: "TOTAL",
+        Omzet: yearTotals.income,
+        "PPh Final 0,5%": Math.round(yearTotals.income * 0.005),
+        "Income Rental": taxMonthlyData.reduce((s, r) => s + r.rentalIncome, 0),
+        "Pajak Daerah 10%": Math.round(taxMonthlyData.reduce((s, r) => s + r.pajakDaerah, 0)),
+      },
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txRows), "Transaksi");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pajakRows), "Pajak Masuk");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(piutangRows), "Piutang Non-Bisnis");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reconRows), "Rekonsiliasi");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), `Ringkasan ${selectedYear}`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(taxRows), `Pajak Siap Lapor ${selectedYear}`);
     XLSX.writeFile(wb, `V3BKS-Rekap-Saldo-${todayISO()}.xlsx`);
+  };
+
+  // Cadangan data mentah (bukan rekap seperti handleExport) — untuk pemulihan data kalau
+  // dibutuhkan, mencakup semua modul yang aktif di unit ini (Keuangan + Membership/Payroll/
+  // Booking/Stok sesuai flag unit). Diunduh sebagai satu file JSON.
+  const [backingUp, setBackingUp] = useState(false);
+  const handleBackupData = async () => {
+    setBackingUp(true);
+    try {
+      const backup = {
+        unit: unitId,
+        exportedAt: new Date().toISOString(),
+        finance: { transactions, initialBalances, reconciliations, monthlyTarget, recurringCategories },
+        templates,
+      };
+      if (unitConfig.hasMembership) {
+        const res = await window.storage.get(membershipKeyFor(unitId), true);
+        backup.membership = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasPayroll) {
+        const res = await window.storage.get(payrollKeyFor(unitId), true);
+        backup.payroll = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasBooking) {
+        const res = await window.storage.get(bookingKeyFor(unitId), true);
+        backup.bookings = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasInventory) {
+        const res = await window.storage.get(inventoryKeyFor(unitId), true);
+        backup.inventory = res?.value ? JSON.parse(res.value) : null;
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `V3BKS-Backup-${unitId}-${todayISO()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Gagal membuat cadangan data: " + (err?.message || "Terjadi kesalahan."));
+    } finally {
+      setBackingUp(false);
+    }
   };
 
   const years = useMemo(() => {
@@ -816,6 +883,25 @@ export default function App() {
       ),
     [monthlyData]
   );
+
+  // Rekap pajak per bulan untuk tahun terpilih — dasar Laporan Pajak Siap Lapor.
+  // PPh Final 0,5% (PP 23/2018) dari total omzet, Pajak Daerah 10% dari income kategori Rental.
+  const taxMonthlyData = useMemo(() => {
+    const rows = MONTHS.map((label, idx) => ({ idx, label, omzet: 0, rentalIncome: 0 }));
+    transactions.forEach((t) => {
+      if (t.type !== "income") return;
+      const d = new Date(t.date);
+      if (d.getFullYear() !== selectedYear) return;
+      const m = d.getMonth();
+      rows[m].omzet += t.amount;
+      if ((t.category || "").toLowerCase().startsWith("rental")) rows[m].rentalIncome += t.amount;
+    });
+    return rows.map((r) => ({
+      ...r,
+      pphFinal: r.omzet * 0.005,
+      pajakDaerah: r.rentalIncome * 0.1,
+    }));
+  }, [transactions, selectedYear]);
 
   const maxAbsProfit = useMemo(
     () => Math.max(1, ...monthlyData.map((r) => Math.abs(r.profit))),
@@ -1263,6 +1349,22 @@ export default function App() {
             >
               <Download className="v3-muted" size={16} />
             </button>
+            {canEdit && (
+              <button
+                onClick={handleBackupData}
+                disabled={backingUp}
+                className="v3-surface-alt flex items-center justify-center"
+                style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
+                aria-label="Cadangkan Data"
+                title="Cadangkan Data (unduh JSON)"
+              >
+                {backingUp ? (
+                  <Loader2 className="v3-muted" size={16} style={{ animation: "spin 0.8s linear infinite" }} />
+                ) : (
+                  <DatabaseBackup className="v3-muted" size={16} />
+                )}
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={() => setShowSettings(true)}

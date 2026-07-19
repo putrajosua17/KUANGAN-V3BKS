@@ -13,7 +13,10 @@
     "users": {
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (!root.child('users').exists() && auth.uid === $uid))"
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (!root.child('users').exists() && auth.uid === $uid))",
+        "lastLoginAt": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
       }
     },
 

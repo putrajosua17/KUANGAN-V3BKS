@@ -151,3 +151,30 @@ sebagai tab **Stok** untuk unit yang punya barang jual/sewa:
   kuantitas × harga satuan, tetap bisa diubah manual sebelum simpan.
 
 Modul ini diaktifkan lewat flag `hasInventory` + konfigurasi `inventoryItems` per unit.
+
+## Fase 5: Laporan Pajak, Backup Data & Keamanan Login
+
+- **Laporan Pajak Siap Lapor** — tombol Export ke Excel (ikon unduh di header) sekarang
+  menyertakan sheet tambahan **"Pajak Siap Lapor {tahun}"**: rekap omzet, estimasi PPh
+  Final 0,5% (PP 23/2018), income kategori Rental, dan estimasi Pajak Daerah 10% per
+  bulan untuk tahun yang sedang dipilih di tab Laporan — tinggal unduh dan kirim ke
+  konsultan pajak / dipakai untuk lapor sendiri. Ini tetap estimasi, bukan nasihat pajak
+  resmi.
+- **Cadangkan Data** — ikon cadangan (di sebelah ikon Export, khusus Admin/Finance)
+  mengunduh seluruh data unit yang sedang dibuka (transaksi, saldo awal, rekonsiliasi,
+  target bulanan, template, plus data Membership/Payroll/Booking/Stok kalau modulnya
+  aktif) sebagai satu file JSON kapan saja — berguna untuk arsip pribadi atau pemulihan
+  data manual. Catatan: ini backup **manual (on-demand)**, bukan backup terjadwal
+  otomatis — backup terjadwal butuh Firebase Cloud Functions + paket berbayar (Blaze)
+  yang di luar cakupan saat ini.
+- **Lupa Password** — link "Lupa password?" di halaman login mengirim email reset
+  password lewat Firebase Authentication (fitur bawaan, otomatis aktif begitu provider
+  Email/Password diaktifkan di langkah "Setup Firebase" di atas).
+- **Login terakhir** — menu Kelola Pengguna (Admin) sekarang menampilkan waktu login
+  terakhir tiap pengguna, sebagai jejak audit sederhana siapa yang masih aktif memakai
+  aplikasi.
+
+**Belum dikerjakan** (butuh keputusan/akun pihak ketiga dari pemilik bisnis): notifikasi
+WhatsApp otomatis (butuh akun WhatsApp Business API seperti Fonnte/Twilio/WA Cloud API
+resmi beserta API key-nya) dan backup terjadwal otomatis (butuh Firebase Cloud Functions
+di paket berbayar Blaze).
