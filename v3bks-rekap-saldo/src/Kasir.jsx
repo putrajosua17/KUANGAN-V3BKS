@@ -515,7 +515,8 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
           onClick={() => { setCheckoutError(""); setShowCheckout(true); }}
           className="v3-gold-bg flex items-center justify-between"
           style={{
-            position: "fixed", bottom: "4.4rem", left: "0.8rem", right: "0.8rem", zIndex: 36,
+            position: "fixed", bottom: "calc(4.4rem + env(safe-area-inset-bottom))", left: "0.8rem", right: "0.8rem", zIndex: 36,
+            maxWidth: 520, margin: "0 auto",
             borderRadius: 14, padding: "0.8rem 1.1rem", fontWeight: 700,
             boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
           }}

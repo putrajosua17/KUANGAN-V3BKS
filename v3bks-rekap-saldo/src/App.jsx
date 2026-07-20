@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart, MoreVertical,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -304,6 +304,7 @@ export default function App() {
   const [unitId, setUnitId] = useState(() => localStorage.getItem("v3bks_last_unit") || null);
   const [showUserManager, setShowUserManager] = useState(false);
   const [showUnitMenu, setShowUnitMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showConsolidated, setShowConsolidated] = useState(false);
 
   useEffect(() => {
@@ -824,6 +825,19 @@ export default function App() {
     set.add(new Date().getFullYear());
     return Array.from(set).sort((a, b) => b - a);
   }, [transactions]);
+
+  // Papan skor bulanan di tab Laporan otomatis di-scroll ke bulan berjalan supaya
+  // bulan yang paling relevan langsung terlihat tanpa geser manual.
+  const scoreboardRef = useRef(null);
+  useEffect(() => {
+    if (activeTab !== "laporan" || !scoreboardRef.current) return;
+    const now = new Date();
+    if (selectedYear !== now.getFullYear()) return;
+    const btn = scoreboardRef.current.children[now.getMonth()];
+    if (btn) {
+      scoreboardRef.current.scrollLeft = Math.max(0, btn.offsetLeft - scoreboardRef.current.clientWidth / 2 + btn.clientWidth / 2);
+    }
+  }, [activeTab, selectedYear]);
 
   const dashboardAsOfDate = useMemo(() => {
     const now = new Date();
@@ -1375,53 +1389,61 @@ export default function App() {
             >
               <Download className="v3-muted" size={16} />
             </button>
-            {canEdit && (
+            {/* Aksi sekunder dikumpulkan di satu menu ⋮ supaya header tetap satu baris di HP */}
+            <div style={{ position: "relative" }}>
               <button
-                onClick={handleBackupData}
-                disabled={backingUp}
+                onClick={() => setShowMoreMenu((v) => !v)}
                 className="v3-surface-alt flex items-center justify-center"
                 style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
-                aria-label="Cadangkan Data"
-                title="Cadangkan Data (unduh JSON)"
+                aria-label="Menu lainnya"
+                title="Menu lainnya"
               >
-                {backingUp ? (
-                  <Loader2 className="v3-muted" size={16} style={{ animation: "spin 0.8s linear infinite" }} />
-                ) : (
-                  <DatabaseBackup className="v3-muted" size={16} />
-                )}
+                <MoreVertical className="v3-muted" size={16} />
               </button>
-            )}
-            {canEdit && (
-              <button
-                onClick={() => setShowSettings(true)}
-                className="v3-surface-alt flex items-center justify-center"
-                style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
-                aria-label="Pengaturan"
-                title="Pengaturan"
-              >
-                <Settings className="v3-muted" size={16} />
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                onClick={() => setShowUserManager(true)}
-                className="v3-surface-alt flex items-center justify-center"
-                style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
-                aria-label="Kelola Pengguna"
-                title="Kelola Pengguna"
-              >
-                <Users className="v3-muted" size={16} />
-              </button>
-            )}
-            <button
-              onClick={handleLogout}
-              className="v3-surface-alt flex items-center justify-center"
-              style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
-              aria-label="Keluar"
-              title="Keluar"
-            >
-              <LogOut className="v3-muted" size={16} />
-            </button>
+              {showMoreMenu && (
+                <>
+                  <div onClick={() => setShowMoreMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
+                  <div className="v3-surface" style={{ position: "absolute", top: "115%", right: 0, zIndex: 40, borderRadius: 14, minWidth: 210, border: "1px solid rgba(201,162,39,0.2)", overflow: "hidden" }}>
+                    {canEdit && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); handleBackupData(); }}
+                        disabled={backingUp}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        {backingUp ? <Loader2 size={15} className="v3-muted" style={{ animation: "spin 0.8s linear infinite" }} /> : <DatabaseBackup size={15} className="v3-muted" />}
+                        Cadangkan Data
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowSettings(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <Settings size={15} className="v3-muted" /> Pengaturan
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowUserManager(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <Users size={15} className="v3-muted" /> Kelola Pengguna
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowMoreMenu(false); handleLogout(); }}
+                      className="flex items-center gap-2"
+                      style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", borderTop: "1px solid rgba(201,162,39,0.15)", cursor: "pointer", color: "#D1574A" }}
+                    >
+                      <LogOut size={15} /> Keluar
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             {canEdit && (
               <button
                 onClick={() => { setEditingTx(null); setShowForm(true); }}
@@ -1696,7 +1718,7 @@ export default function App() {
           </select>
         </div>
 
-        <div className="v3-scroll flex gap-2" style={{ overflowX: "auto", paddingBottom: "0.5rem", marginBottom: "1.4rem" }}>
+        <div ref={scoreboardRef} className="v3-scroll flex gap-2" style={{ overflowX: "auto", paddingBottom: "0.5rem", marginBottom: "1.4rem" }}>
           {monthlyData.map((r) => {
             const isSelected = selectedMonth === r.idx;
             const barPct = Math.min(100, (Math.abs(r.profit) / maxAbsProfit) * 100);
@@ -1721,7 +1743,7 @@ export default function App() {
                 </p>
                 <p className="v3-mono v3-green" style={{ fontSize: "0.68rem", marginTop: "0.3rem" }}>
                   +{formatRupiah(r.income)}
-                  {r.targetPct !== null && (
+                  {r.targetPct !== null && r.income > 0 && (
                     <span style={{ color: r.targetPct >= 100 ? "#4CAF61" : r.targetPct >= 70 ? "#C9A227" : "#D1574A" }}>
                       {" "}({r.targetPct}%)
                     </span>
@@ -2342,11 +2364,13 @@ export default function App() {
         </p>
       </div>
 
-      {/* Bottom tab navigation */}
+      {/* Bottom tab navigation — scroll horizontal kalau tab tidak muat (unit dengan 7 tab
+          di HP kecil), label tidak boleh patah 2 baris, plus safe-area untuk iPhone ber-notch */}
       <div
-        className="v3-surface flex items-center"
-        style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 35, borderTop: "1px solid rgba(201,162,39,0.18)", padding: "0.4rem 0.6rem" }}
+        className="v3-surface"
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 35, borderTop: "1px solid rgba(201,162,39,0.18)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
+        <div className="v3-scroll flex items-center" style={{ padding: "0.35rem 0.4rem", overflowX: "auto", maxWidth: 1100, margin: "0 auto" }}>
         {[
           ["dashboard", "Dashboard", LayoutDashboard],
           ...(unitConfig.hasPos && canEdit ? [["kasir", "Kasir", ShoppingCart]] : []),
@@ -2356,20 +2380,22 @@ export default function App() {
           ...(unitConfig.hasMembership ? [["membership", "Member", UserCheck]] : []),
           ...(unitConfig.hasPayroll ? [["payroll", "Payroll", Wallet]] : []),
           ...(unitConfig.hasInventory ? [["stok", "Stok", Package]] : []),
-          ["ceksaldo", "Cek Saldo", ShieldCheck],
+          ["ceksaldo", "Saldo", ShieldCheck],
         ].map(([key, label, TabIcon]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className="flex flex-col items-center justify-center"
-            style={{ flex: 1, padding: "0.4rem 0", gap: "0.2rem" }}
+            style={{ flex: "1 0 auto", minWidth: 50, padding: "0.4rem 0.25rem", gap: "0.2rem" }}
+            aria-current={activeTab === key ? "page" : undefined}
           >
             <TabIcon size={19} style={{ color: activeTab === key ? "#C9A227" : "#8A9099" }} />
-            <span style={{ fontSize: "0.65rem", fontWeight: 600, color: activeTab === key ? "#C9A227" : "#8A9099" }}>
+            <span style={{ fontSize: "0.62rem", fontWeight: 600, whiteSpace: "nowrap", color: activeTab === key ? "#C9A227" : "#8A9099" }}>
               {label}
             </span>
           </button>
         ))}
+        </div>
       </div>
 
       {/* AI Assistant dihapus */}
@@ -2380,7 +2406,7 @@ export default function App() {
           onClick={() => { setEditingTx(null); setShowForm(true); }}
           className="v3-gold-bg md:hidden flex items-center justify-center"
           style={{
-            position: "fixed", bottom: "4.6rem", right: "1.2rem", width: 54, height: 54,
+            position: "fixed", bottom: "calc(4.6rem + env(safe-area-inset-bottom))", right: "1.2rem", width: 54, height: 54,
             borderRadius: 999, boxShadow: "0 6px 18px rgba(0,0,0,0.4)", zIndex: 40,
           }}
           aria-label="Tambah transaksi"
@@ -2819,6 +2845,7 @@ function LunasModal({ piutang, onConfirm, onClose }) {
 }
 
 function CekSaldoTab({ cekSaldoResult, cekSaldoTotalDiff, cekSaldoInputCount, cekSaldoHasSelisih, actuals, setActuals, onSaveRecon, todayStr, reconAnalysis, setReconAnalysis, allTransactions, reconciliations, onPeriksaTransaksi, onSetorTunai }) {
+  const { methodMeta: METHOD_META } = useUnitConfig();
   const [recordedBy, setRecordedBy] = useState("");
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
