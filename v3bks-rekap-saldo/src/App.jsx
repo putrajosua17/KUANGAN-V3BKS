@@ -1805,24 +1805,25 @@ export default function App() {
         )}
 
         {/* Chart */}
-        <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 0.6rem 0.6rem 0", marginBottom: "1.4rem" }}>
-          <p className="v3-muted" style={{ fontSize: "0.78rem", padding: "0 1rem", marginBottom: "0.4rem" }}>
-            Tren Income vs Expense — {selectedYear}
+        <div className="v3-surface" style={{ borderRadius: 16, padding: "1.1rem 0.6rem 0.6rem 0", marginBottom: "1.4rem" }}>
+          <p style={{ fontSize: "0.68rem", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700, color: "#8A9099", padding: "0 1.1rem", marginBottom: "0.6rem" }}>
+            Tren Income vs Expense · {selectedYear}
           </p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={monthlyData} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis dataKey="label" stroke="#8A9099" fontSize={11} tickLine={false} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} />
               <YAxis stroke="#8A9099" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => (v === 0 ? "0" : (v / 1000000).toFixed(1) + "jt")} width={42} />
               <Tooltip
+                cursor={{ fill: "rgba(201,162,39,0.08)" }}
                 formatter={(value, name) => [formatRupiah(value), name]}
-                labelStyle={{ color: "#0B0D10" }}
-                contentStyle={{ background: "#F2EFE9", border: "none", borderRadius: 8, fontSize: "0.78rem" }}
+                labelStyle={{ color: "#0B0D10", fontWeight: 700 }}
+                contentStyle={{ background: "#F2EFE9", border: "none", borderRadius: 10, fontSize: "0.78rem", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}
               />
               <Legend wrapperStyle={{ fontSize: "0.72rem", color: "#8A9099" }} />
-              <Bar dataKey="income" name="Income" fill="#4CAF61" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="expense" name="Expense" fill="#D1574A" radius={[3, 3, 0, 0]} />
-              <Line dataKey="profit" name="Profit" stroke="#C9A227" strokeWidth={2} dot={{ r: 3, fill: "#C9A227" }} />
+              <Bar dataKey="income" name="Income" fill="#4CAF61" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              <Bar dataKey="expense" name="Expense" fill="#D1574A" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              <Line dataKey="profit" name="Profit" stroke="#C9A227" strokeWidth={2.2} dot={{ r: 2.5, fill: "#C9A227" }} activeDot={{ r: 5, fill: "#E4C24A", stroke: "#0B0D10", strokeWidth: 1.5 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -3320,9 +3321,10 @@ function BreakEvenCard({ data }) {
 function SummaryChip({ label, value, tone }) {
   const color = tone === "green" ? "#4CAF61" : tone === "red" ? "#D1574A" : "#C9A227";
   return (
-    <div className="v3-surface-alt" style={{ borderRadius: 999, padding: "0.4rem 0.85rem", fontSize: "0.75rem" }}>
-      <span className="v3-muted">{label}: </span>
-      <span className="v3-mono" style={{ color, fontWeight: 600 }}>{formatRupiah(value)}</span>
+    <div className="v3-surface-alt flex items-center gap-2" style={{ borderRadius: 999, padding: "0.4rem 0.9rem 0.4rem 0.8rem", fontSize: "0.75rem" }}>
+      <span style={{ width: 7, height: 7, borderRadius: 999, background: color, flexShrink: 0 }} />
+      <span className="v3-muted">{label}</span>
+      <span className="v3-mono" style={{ color, fontWeight: 700 }}>{formatRupiah(value)}</span>
     </div>
   );
 }
@@ -3409,7 +3411,7 @@ function TransactionRow({ tx, highlighted, canEdit = true, onEdit, onDelete }) {
         transition: "border 0.3s, box-shadow 0.3s",
       }}
     >
-      <div className="flex items-center justify-center" style={{ width: 34, height: 34, borderRadius: 999, background: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
+      <div className="flex items-center justify-center" style={{ width: 36, height: 36, borderRadius: 10, background: color + "1F", flexShrink: 0 }}>
         <Icon size={16} style={{ color }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -3436,7 +3438,7 @@ function TransactionRow({ tx, highlighted, canEdit = true, onEdit, onDelete }) {
         {tx.note && <p className="v3-muted" style={{ fontSize: "0.72rem", fontStyle: "italic" }}>{tx.note}</p>}
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <p className="v3-mono" style={{ fontWeight: 600, color, fontSize: "0.9rem" }}>
+        <p className="v3-mono" style={{ fontWeight: 700, color, fontSize: "0.92rem" }}>
           {sign}{formatRupiah(tx.amount)}
         </p>
         <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: "0.25rem" }}>
@@ -4146,7 +4148,7 @@ const CSS = `
 ${FONT_IMPORTS}
 .v3-root { background:#0B0D10; color:#F2EFE9; font-family:'Inter',sans-serif; }
 .v3-display { font-family:'Oswald',sans-serif; }
-.v3-mono { font-family:'IBM Plex Mono',monospace; }
+.v3-mono { font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums; }
 .v3-surface { background:#15191D; border:1px solid rgba(201,162,39,0.14); }
 .v3-surface-alt { background:#1B2025; border:1px solid rgba(255,255,255,0.04); }
 .v3-muted { color:#8A9099; }
