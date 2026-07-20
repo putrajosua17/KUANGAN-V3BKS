@@ -2,7 +2,7 @@
 // manual (Putih=Kosong, Kuning=Booked/DP, Biru=Lunas, Merah=Maintenance). Booking baru
 // otomatis dicek bentrok, harga disarankan dari price band unit, dan bisa langsung
 // tercatat sebagai transaksi income di modul Keuangan.
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Plus, X, Loader2, ChevronLeft, ChevronRight, Trash2, Pencil, AlertCircle,
 } from "lucide-react";
@@ -40,11 +40,12 @@ export function suggestPrice(group, dateStr, startHour, durationHours) {
   return total;
 }
 
+// Warna solid (bukan transparan samar) supaya sel jadwal tegas & nama klien terbaca.
 const STATUS_COLOR = {
-  Booked: { bg: "rgba(201,162,39,0.55)", label: "Booked" },
-  DP: { bg: "rgba(201,162,39,0.55)", label: "DP" },
-  Lunas: { bg: "rgba(77,127,176,0.6)", label: "Lunas" },
-  Maintenance: { bg: "rgba(209,87,74,0.55)", label: "Maintenance" },
+  Booked: { bg: "#C9A227", fg: "#0B0D10", label: "Booked", mark: "" },
+  DP: { bg: "#C9A227", fg: "#0B0D10", label: "DP", mark: "½" },
+  Lunas: { bg: "#4D7FB0", fg: "#0B0D10", label: "Lunas", mark: "✓" },
+  Maintenance: { bg: "#D1574A", fg: "#fff", label: "Maintenance", mark: "✕" },
 };
 
 export default function Booking({ unitId, bookingGroups, methods, canEdit, onRecordPayment }) {
@@ -57,6 +58,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
   const [prefill, setPrefill] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [error, setError] = useState("");
+  const gridScrollRef = useRef(null);
 
   const group = bookingGroups.find((g) => g.id === selectedGroupId) || bookingGroups[0];
 
@@ -86,6 +88,19 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
     () => bookings.filter((b) => b.groupId === group.id && b.date === selectedDate),
     [bookings, group.id, selectedDate]
   );
+
+  // Auto-scroll grid ke sekitar jam berjalan (atau booking paling awal) supaya jam sibuk
+  // sore/malam langsung terlihat tanpa geser manual dari jam 07 pagi.
+  useEffect(() => {
+    if (!loaded || !gridScrollRef.current) return;
+    const nowHour = new Date().getHours();
+    const earliest = dayBookings.length ? Math.min(...dayBookings.map((b) => b.startHour)) : nowHour;
+    const focusHour = selectedDate === todayISO() ? Math.min(nowHour, earliest) : earliest;
+    const cols = group.endHour - group.startHour;
+    const el = gridScrollRef.current;
+    const frac = Math.max(0, (focusHour - group.startHour - 0.5)) / cols;
+    el.scrollLeft = Math.max(0, frac * (el.scrollWidth - el.clientWidth));
+  }, [loaded, selectedDate, group.id, dayBookings.length]);
 
   const findBookingAt = (resource, hour) =>
     dayBookings.find((b) => b.resource === resource && hour >= b.startHour && hour < b.startHour + b.durationHours);
@@ -146,25 +161,30 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
 
   return (
     <div>
-      <div className="v3-surface" style={{ borderRadius: 14, padding: "0.8rem 0.9rem", marginBottom: "0.9rem" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: bookingGroups.length > 1 ? "0.7rem" : 0 }}>
-          <button onClick={() => setSelectedDate((d) => shiftDate(d, -1))} className="v3-surface-alt flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 999 }}>
-            <ChevronLeft size={15} className="v3-muted" />
+      <div className="v3-surface" style={{ borderRadius: 16, padding: "0.9rem 1rem", marginBottom: "0.9rem" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: bookingGroups.length > 1 ? "0.8rem" : 0, gap: "0.6rem" }}>
+          <button onClick={() => setSelectedDate((d) => shiftDate(d, -1))} className="v3-surface-alt flex items-center justify-center" style={{ width: 40, height: 40, borderRadius: 999, flexShrink: 0 }} aria-label="Hari sebelumnya">
+            <ChevronLeft size={18} className="v3-muted" />
           </button>
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", flex: 1, minWidth: 0 }}>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="v3-input"
-              style={{ borderRadius: 8, padding: "0.35rem 0.5rem", fontSize: "0.82rem", textAlign: "center" }}
+              style={{ borderRadius: 10, padding: "0.5rem 0.5rem", fontSize: "0.95rem", fontWeight: 700, textAlign: "center", width: "100%" }}
             />
-            <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.2rem" }}>
-              {isWeekend(selectedDate) ? "Weekend" : "Weekday"} · {selectedDate === todayISO() ? "Hari ini" : ""}
-            </p>
+            <div className="flex items-center justify-center gap-1.5" style={{ marginTop: "0.4rem" }}>
+              {selectedDate === todayISO() && (
+                <span className="v3-gold-bg" style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.06em", padding: "0.15rem 0.5rem", borderRadius: 999 }}>HARI INI</span>
+              )}
+              <span style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.04em", padding: "0.15rem 0.5rem", borderRadius: 999, background: isWeekend(selectedDate) ? "rgba(217,119,46,0.18)" : "rgba(255,255,255,0.06)", color: isWeekend(selectedDate) ? "#D9772E" : "#8A9099" }}>
+                {isWeekend(selectedDate) ? "WEEKEND" : "WEEKDAY"}
+              </span>
+            </div>
           </div>
-          <button onClick={() => setSelectedDate((d) => shiftDate(d, 1))} className="v3-surface-alt flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 999 }}>
-            <ChevronRight size={15} className="v3-muted" />
+          <button onClick={() => setSelectedDate((d) => shiftDate(d, 1))} className="v3-surface-alt flex items-center justify-center" style={{ width: 40, height: 40, borderRadius: 999, flexShrink: 0 }} aria-label="Hari berikutnya">
+            <ChevronRight size={18} className="v3-muted" />
           </button>
         </div>
         {bookingGroups.length > 1 && (
@@ -174,7 +194,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
                 key={g.id}
                 onClick={() => setSelectedGroupId(g.id)}
                 className={g.id === selectedGroupId ? "v3-gold-bg" : "v3-surface-alt v3-muted"}
-                style={{ flex: 1, borderRadius: 999, padding: "0.4rem 0", fontSize: "0.78rem", fontWeight: 600 }}
+                style={{ flex: 1, borderRadius: 999, padding: "0.55rem 0", fontSize: "0.82rem", fontWeight: 700 }}
               >
                 {g.label}
               </button>
@@ -183,24 +203,25 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
         )}
       </div>
 
-      <div className="flex gap-3" style={{ marginBottom: "0.8rem", flexWrap: "wrap" }}>
-        {[["Kosong", "rgba(255,255,255,0.05)"], ["Booked/DP", STATUS_COLOR.Booked.bg], ["Lunas", STATUS_COLOR.Lunas.bg], ["Maintenance", STATUS_COLOR.Maintenance.bg]].map(([label, bg]) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: "1px solid rgba(255,255,255,0.1)" }} />
-            <span className="v3-muted" style={{ fontSize: "0.7rem" }}>{label}</span>
+      {/* Legenda warna besar — sekali lihat langsung paham status tiap sel */}
+      <div className="flex gap-2" style={{ marginBottom: "0.9rem", flexWrap: "wrap" }}>
+        {[["Kosong", "rgba(255,255,255,0.06)", "#8A9099", ""], ["DP", STATUS_COLOR.DP.bg, "#0B0D10", "½"], ["Lunas", STATUS_COLOR.Lunas.bg, "#0B0D10", "✓"], ["Maintenance", STATUS_COLOR.Maintenance.bg, "#fff", "✕"]].map(([label, bg, fg, mark]) => (
+          <div key={label} className="flex items-center gap-1.5" style={{ background: "rgba(255,255,255,0.03)", borderRadius: 999, padding: "0.3rem 0.65rem 0.3rem 0.35rem" }}>
+            <div style={{ width: 18, height: 18, borderRadius: 5, background: bg, border: "1px solid rgba(255,255,255,0.1)", display: "grid", placeItems: "center", fontSize: "0.6rem", fontWeight: 800, color: fg }}>{mark}</div>
+            <span style={{ fontSize: "0.72rem", fontWeight: 600 }}>{label}</span>
           </div>
         ))}
       </div>
 
-      <div className="v3-surface v3-scroll" style={{ borderRadius: 14, padding: "0.8rem", overflowX: "auto", marginBottom: "1rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+      <div ref={gridScrollRef} className="v3-surface v3-scroll" style={{ borderRadius: 16, padding: "0.8rem", overflowX: "auto", marginBottom: "1rem" }}>
+        <table style={{ borderCollapse: "separate", borderSpacing: 3, width: "100%" }}>
           <thead>
             <tr>
-              <th style={{ position: "sticky", left: 0, background: "#15191D", padding: "0.3rem 0.6rem", textAlign: "left", fontSize: "0.68rem", color: "#8A9099", zIndex: 1 }}>
+              <th style={{ position: "sticky", left: 0, background: "#15191D", padding: "0.3rem 0.6rem", textAlign: "left", fontSize: "0.66rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9099", zIndex: 1 }}>
                 {group.label}
               </th>
               {hours.map((h) => (
-                <th key={h} style={{ padding: "0.3rem 0.4rem", fontSize: "0.62rem", color: "#8A9099", fontWeight: 500, minWidth: 44 }}>
+                <th key={h} style={{ padding: "0.2rem 0.3rem", fontSize: "0.62rem", color: "#8A9099", fontWeight: 600, minWidth: 46 }}>
                   {hourLabel(h)}
                 </th>
               ))}
@@ -209,13 +230,14 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
           <tbody>
             {group.resources.map((resource) => (
               <tr key={resource}>
-                <td style={{ position: "sticky", left: 0, background: "#15191D", padding: "0.3rem 0.6rem", fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap", zIndex: 1 }}>
+                <td style={{ position: "sticky", left: 0, background: "#15191D", padding: "0.3rem 0.7rem", fontSize: "0.8rem", fontWeight: 700, whiteSpace: "nowrap", zIndex: 1 }}>
                   {resource}
                 </td>
                 {hours.map((h) => {
                   const b = findBookingAt(resource, h);
                   const isStart = b && b.startHour === h;
-                  const bg = b ? STATUS_COLOR[b.status]?.bg : "rgba(255,255,255,0.03)";
+                  const sc = b ? STATUS_COLOR[b.status] : null;
+                  const bg = sc ? sc.bg : "rgba(255,255,255,0.03)";
                   return (
                     <td
                       key={h}
@@ -225,18 +247,20 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
                         else { setPrefill({ resource, hour: h }); setEditingBooking(null); setShowForm(true); }
                       }}
                       style={{
-                        border: "1px solid rgba(255,255,255,0.05)",
+                        borderRadius: 6,
+                        border: b ? "none" : "1px solid rgba(255,255,255,0.05)",
                         background: bg,
-                        height: 34,
+                        height: 42,
                         cursor: canEdit ? "pointer" : "default",
                         textAlign: "center",
                         verticalAlign: "middle",
                       }}
-                      title={b ? `${b.clientName} · ${b.status}` : "Kosong"}
+                      title={b ? `${b.clientName} · ${sc?.label || b.status}` : "Kosong"}
                     >
                       {isStart && (
-                        <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#0B0D10", whiteSpace: "nowrap", padding: "0 2px" }}>
-                          {b.clientName?.slice(0, 8) || (b.status === "Maintenance" ? "Maint." : "")}
+                        <span style={{ fontSize: "0.64rem", fontWeight: 800, color: sc?.fg || "#0B0D10", whiteSpace: "nowrap", padding: "0 3px", display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                          {sc?.mark && <span style={{ opacity: 0.75 }}>{sc.mark}</span>}
+                          {b.clientName?.slice(0, 7) || (b.status === "Maintenance" ? "Maint." : "")}
                         </span>
                       )}
                     </td>
@@ -250,28 +274,32 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
 
       {dayBookings.length > 0 && (
         <div className="flex flex-col" style={{ gap: "0.5rem", marginBottom: "1rem" }}>
-          <p className="v3-muted" style={{ fontSize: "0.7rem", textTransform: "uppercase" }}>Booking Hari Ini</p>
-          {dayBookings.sort((a, b) => a.startHour - b.startHour).map((b) => (
-            <div key={b.id} className="v3-surface-alt flex items-center justify-between" style={{ borderRadius: 10, padding: "0.55rem 0.8rem" }}>
+          <p className="v3-muted" style={{ fontSize: "0.7rem", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700 }}>Booking Hari Ini ({dayBookings.length})</p>
+          {dayBookings.sort((a, b) => a.startHour - b.startHour).map((b) => {
+            const sc = STATUS_COLOR[b.status] || STATUS_COLOR.Booked;
+            return (
+            <div key={b.id} className="v3-surface-alt flex items-center justify-between" style={{ borderRadius: 12, padding: "0.6rem 0.85rem", borderLeft: `3px solid ${sc.bg}` }}>
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: "0.8rem", fontWeight: 600 }}>
+                <p style={{ fontSize: "0.82rem", fontWeight: 700 }}>
                   {b.resource} · {hourLabel(b.startHour)}-{hourLabel(b.startHour + b.durationHours)}
                 </p>
-                <p className="v3-muted" style={{ fontSize: "0.72rem" }}>
-                  {b.clientName || "-"}{b.clientPhone ? ` · ${b.clientPhone}` : ""} · {b.status}
+                <p className="v3-muted" style={{ fontSize: "0.72rem", marginTop: "0.1rem" }}>
+                  {b.clientName || "-"}{b.clientPhone ? ` · ${b.clientPhone}` : ""}
+                  <span style={{ color: sc.bg, fontWeight: 700 }}> · {sc.label}</span>
                 </p>
               </div>
               <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                <span className="v3-mono" style={{ fontSize: "0.78rem", fontWeight: 700 }}>{formatRupiah(b.amount)}</span>
+                <span className="v3-mono" style={{ fontSize: "0.8rem", fontWeight: 700 }}>{formatRupiah(b.amount)}</span>
                 {canEdit && (
                   <>
-                    <button onClick={() => { setEditingBooking(b); setShowForm(true); }}><Pencil size={13} className="v3-muted" /></button>
-                    <button onClick={() => setConfirmDelete(b.id)}><Trash2 size={13} className="v3-muted" /></button>
+                    <button onClick={() => { setEditingBooking(b); setShowForm(true); }} className="v3-surface flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 999 }} aria-label="Edit"><Pencil size={13} className="v3-muted" /></button>
+                    <button onClick={() => setConfirmDelete(b.id)} className="v3-surface flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 999 }} aria-label="Hapus"><Trash2 size={13} className="v3-muted" /></button>
                   </>
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

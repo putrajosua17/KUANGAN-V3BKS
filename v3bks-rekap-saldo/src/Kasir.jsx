@@ -409,13 +409,13 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
   return (
     <div style={{ paddingBottom: cart.length ? "4.5rem" : 0 }}>
       {/* Tab grup menu + tombol editor */}
-      <div className="flex items-center gap-1.5" style={{ marginBottom: "0.8rem", flexWrap: "wrap" }}>
+      <div className="flex items-center gap-1.5" style={{ marginBottom: "0.9rem", flexWrap: "wrap" }}>
         {sortedGroups.map((g) => (
           <button
             key={g.id}
             onClick={() => setActiveGroupId(g.id)}
             className={g.id === currentGroupId ? "v3-gold-bg" : "v3-surface-alt v3-muted"}
-            style={{ borderRadius: 999, padding: "0.45rem 0.95rem", fontSize: "0.78rem", fontWeight: 600 }}
+            style={{ borderRadius: 999, padding: "0.55rem 1.1rem", fontSize: "0.82rem", fontWeight: 700 }}
           >
             {g.label}
           </button>
@@ -424,7 +424,7 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
           <button
             onClick={() => setShowEditor(true)}
             className="v3-surface-alt flex items-center gap-1"
-            style={{ marginLeft: "auto", borderRadius: 999, padding: "0.45rem 0.8rem", fontSize: "0.75rem", fontWeight: 600 }}
+            style={{ marginLeft: "auto", borderRadius: 999, padding: "0.5rem 0.85rem", fontSize: "0.75rem", fontWeight: 600 }}
             title="Atur Menu Kasir"
           >
             <Settings2 size={13} className="v3-gold" /> Atur Menu
@@ -432,42 +432,55 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
         )}
       </div>
 
-      {/* Grid tombol menu */}
+      {/* Grid tombol menu — tombol besar, harga tebal & sisa stok jelas untuk kecepatan input */}
       {visibleItems.length === 0 ? (
         <div className="v3-surface flex flex-col items-center text-center" style={{ borderRadius: 16, padding: "2.5rem 1.5rem", marginBottom: "1rem" }}>
           <ShoppingCart size={28} className="v3-muted" style={{ marginBottom: "0.6rem" }} />
           <p className="v3-muted" style={{ fontSize: "0.85rem" }}>Belum ada item menu di grup ini. Tambahkan lewat "Atur Menu".</p>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))", gap: "0.6rem", marginBottom: "1.1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "0.7rem", marginBottom: "1.1rem" }}>
           {visibleItems.map((it) => {
             const stock = it.inventoryItemId ? stockOf(it.inventoryItemId) : null;
             const outOfStock = stock !== null && stock <= 0;
+            const inCart = cart.filter((c) => c.menuItemId === it.id).reduce((s, c) => s + c.qty, 0);
+            const accent = it.color || "#C9A227";
             return (
               <button
                 key={it.id}
                 onClick={() => addToCart(it)}
+                disabled={outOfStock}
                 className="v3-surface"
                 style={{
-                  borderRadius: 14,
-                  padding: "0.7rem 0.6rem",
+                  position: "relative",
+                  borderRadius: 16,
+                  padding: "0.85rem 0.8rem",
                   textAlign: "left",
-                  border: `1.5px solid ${it.color || "#C9A227"}55`,
-                  background: `linear-gradient(160deg, ${it.color || "#C9A227"}22, transparent 70%)`,
-                  cursor: "pointer",
-                  minHeight: 76,
-                  opacity: outOfStock ? 0.55 : 1,
+                  border: `1.5px solid ${accent}66`,
+                  background: `linear-gradient(155deg, ${accent}26, transparent 72%)`,
+                  cursor: outOfStock ? "not-allowed" : "pointer",
+                  minHeight: 96,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  gap: "0.4rem",
+                  opacity: outOfStock ? 0.5 : 1,
                 }}
               >
-                <p style={{ fontSize: "0.76rem", fontWeight: 700, lineHeight: 1.25, marginBottom: "0.3rem" }}>{it.name}</p>
-                <p className="v3-mono" style={{ fontSize: "0.7rem", color: it.color || "#C9A227", fontWeight: 700 }}>
-                  {it.priceType === "perHour" ? "per jam" : it.price > 0 ? formatRupiah(it.price) : "isi harga"}
-                </p>
-                {stock !== null && (
-                  <p className="v3-muted" style={{ fontSize: "0.62rem", marginTop: "0.15rem" }}>
-                    Stok: {stock}{outOfStock ? " (habis)" : ""}
-                  </p>
+                {inCart > 0 && (
+                  <span className="v3-mono" style={{ position: "absolute", top: 8, right: 8, minWidth: 20, height: 20, borderRadius: 999, background: accent, color: "#0B0D10", fontSize: "0.68rem", fontWeight: 800, display: "grid", placeItems: "center", padding: "0 5px" }}>{inCart}</span>
                 )}
+                <p style={{ fontSize: "0.86rem", fontWeight: 700, lineHeight: 1.2, paddingRight: inCart > 0 ? "1.6rem" : 0 }}>{it.name}</p>
+                <div>
+                  <p className="v3-mono" style={{ fontSize: "0.9rem", color: accent, fontWeight: 800 }}>
+                    {it.priceType === "perHour" ? "per jam" : it.price > 0 ? formatRupiah(it.price) : "isi harga"}
+                  </p>
+                  {stock !== null && (
+                    <p style={{ fontSize: "0.64rem", marginTop: "0.15rem", fontWeight: 600, color: outOfStock ? "#D1574A" : stock <= 3 ? "#D9772E" : "#8A9099" }}>
+                      Stok: {stock}{outOfStock ? " · habis" : ""}
+                    </p>
+                  )}
+                </div>
               </button>
             );
           })}
@@ -509,7 +522,7 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
         </div>
       )}
 
-      {/* Bar keranjang melayang */}
+      {/* Bar keranjang melayang — besar & jelas, total tercetak di dalam tombol BAYAR */}
       {cart.length > 0 && (
         <button
           onClick={() => { setCheckoutError(""); setShowCheckout(true); }}
@@ -517,14 +530,21 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
           style={{
             position: "fixed", bottom: "calc(4.4rem + env(safe-area-inset-bottom))", left: "0.8rem", right: "0.8rem", zIndex: 36,
             maxWidth: 520, margin: "0 auto",
-            borderRadius: 14, padding: "0.8rem 1.1rem", fontWeight: 700,
-            boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+            borderRadius: 16, padding: "0.85rem 1.1rem", fontWeight: 800,
+            boxShadow: "0 8px 22px rgba(201,162,39,0.3)",
           }}
         >
-          <span className="flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
-            <ShoppingCart size={16} /> {cartCount} item
+          <span className="flex items-center gap-2" style={{ fontSize: "0.9rem" }}>
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              <ShoppingCart size={19} />
+              <span className="v3-mono" style={{ position: "absolute", top: -7, right: -9, minWidth: 17, height: 17, borderRadius: 999, background: "#0B0D10", color: "#E4C24A", fontSize: "0.62rem", fontWeight: 800, display: "grid", placeItems: "center", padding: "0 4px" }}>{cartCount}</span>
+            </span>
+            Keranjang
           </span>
-          <span className="v3-mono" style={{ fontSize: "0.9rem" }}>{formatRupiah(cartSubtotal)} · BAYAR</span>
+          <span className="flex items-center gap-2">
+            <span className="v3-mono" style={{ fontSize: "1rem" }}>{formatRupiah(cartSubtotal)}</span>
+            <span style={{ fontSize: "0.9rem", letterSpacing: "0.03em" }}>· BAYAR ›</span>
+          </span>
         </button>
       )}
 
