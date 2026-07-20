@@ -122,15 +122,35 @@ export async function deleteUserProfile(uid) {
 }
 
 export function mapAuthError(err) {
-  const code = err?.code || "";
+  const code = (err?.code || "").toLowerCase();
+  const msg = (err?.message || "").toLowerCase();
+  // Log lengkap ke console supaya kalau ada error tak terduga masih bisa ditelusuri.
+  try { console.error("[V3BKS auth]", err?.code, err?.message, err); } catch { /* abaikan */ }
+
   if (code.includes("wrong-password") || code.includes("invalid-credential") || code.includes("invalid-login-credentials")) {
     return "Email atau password salah.";
   }
   if (code.includes("user-not-found")) return "Akun dengan email ini tidak ditemukan.";
-  if (code.includes("email-already-in-use")) return "Email ini sudah terdaftar.";
+  if (code.includes("email-already-in-use")) return "Email ini sudah terdaftar. Pakai email lain, atau hapus akun lama dulu di Firebase Console (Authentication → Users).";
   if (code.includes("weak-password")) return "Password minimal 6 karakter.";
   if (code.includes("invalid-email")) return "Format email tidak valid.";
+  if (code.includes("missing-email")) return "Email wajib diisi.";
   if (code.includes("too-many-requests")) return "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.";
   if (code.includes("network-request-failed")) return "Gagal terhubung. Periksa koneksi internet.";
-  return err?.message || "Terjadi kesalahan. Coba lagi.";
+  // Provider Email/Password belum diaktifkan di Firebase Console.
+  if (code.includes("operation-not-allowed") || code.includes("admin-restricted-operation")) {
+    return "Pembuatan akun via Email/Password belum diaktifkan. Buka Firebase Console → Authentication → Sign-in method → aktifkan Email/Password.";
+  }
+  if (code.includes("configuration-not-found")) {
+    return "Firebase Authentication belum disiapkan. Buka Firebase Console → Authentication → Get started, lalu aktifkan Email/Password.";
+  }
+  // Aturan keamanan Realtime Database menolak penulisan profil.
+  if (code.includes("permission-denied") || code.includes("permission_denied") || msg.includes("permission_denied") || msg.includes("permission denied")) {
+    return "Akun login-nya kemungkinan terbuat, tapi menyimpan profil (role/unit) ditolak aturan keamanan. Pastikan database.rules.json versi terbaru sudah di-Publish di Firebase Console → Realtime Database → Rules, dan akun Anda benar-benar ber-role Admin.";
+  }
+  if (code.includes("timeout") || msg.includes("waktu tunggu")) {
+    return "Waktu tunggu habis. Periksa koneksi internet lalu coba lagi.";
+  }
+  // Error tak terkenal — tampilkan kodenya supaya mudah didiagnosis.
+  return `Gagal: ${err?.code || err?.message || "kesalahan tak terduga"}. Coba lagi, atau kirim pesan error ini untuk dibantu.`;
 }
