@@ -75,15 +75,36 @@ export async function listUsers() {
 
 // Dipakai sekali saja, saat belum ada pengguna sama sekali di sistem (setup awal).
 export async function createFirstAdmin({ email, password, name }) {
-  const cred = await withTimeout(createUserWithEmailAndPassword(auth, email.trim(), password));
-  await withTimeout(set(ref(db, `users/${cred.user.uid}`), {
-    name: name.trim(),
-    email: email.trim(),
-    role: "admin",
-    units: { "*": true },
-    createdAt: Date.now(),
-  }));
-  await withTimeout(set(ref(db, "system/bootstrapped"), true));
+  let cred;
+  try {
+    cred = await withTimeout(createUserWithEmailAndPassword(auth, email.trim(), password));
+  } catch (err) {
+    // Kalau akun auth-nya sudah ada dari percobaan sebelumnya yang gagal di tengah
+    // (profil belum sempat tersimpan), masuk saja dengan kredensial yang sama lalu
+    // lanjutkan menulis profilnya — supaya tidak buntu di "email sudah terdaftar".
+    if ((err?.code || "").includes("email-already-in-use")) {
+      cred = await withTimeout(signInWithEmailAndPassword(auth, email.trim(), password));
+    } else {
+      throw err;
+    }
+  }
+  try {
+    await withTimeout(set(ref(db, `users/${cred.user.uid}`), {
+      name: name.trim(),
+      email: email.trim(),
+      role: "admin",
+      units: { "*": true },
+      createdAt: Date.now(),
+    }));
+    await withTimeout(set(ref(db, "system/bootstrapped"), true));
+  } catch (err) {
+    // Profil admin gagal disimpan — hampir selalu karena aturan keamanan Realtime
+    // Database menolak. Simpan pesannya lalu keluarkan sesi, supaya user TIDAK nyangkut
+    // di layar "Belum ada akses" dan bisa melihat penyebabnya di form login.
+    try { sessionStorage.setItem("v3bks_bootstrap_error", mapAuthError(err)); } catch { /* abaikan */ }
+    try { await signOut(auth); } catch { /* abaikan */ }
+    throw err;
+  }
   return cred.user;
 }
 

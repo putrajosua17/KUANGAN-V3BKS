@@ -19,6 +19,12 @@ export default function Login() {
       .then((exists) => setBootstrap(!exists))
       .catch(() => setBootstrap(false))
       .finally(() => setChecking(false));
+    // Kalau pembuatan admin pertama sebelumnya gagal menyimpan profil (rules menolak),
+    // pesannya dititipkan lewat sessionStorage — tampilkan di sini setelah kembali ke form.
+    try {
+      const pending = sessionStorage.getItem("v3bks_bootstrap_error");
+      if (pending) { setError(pending); sessionStorage.removeItem("v3bks_bootstrap_error"); }
+    } catch { /* abaikan */ }
   }, []);
 
   const handleSubmit = async (e) => {
