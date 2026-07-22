@@ -1313,7 +1313,7 @@ export default function App() {
 
   return (
     <UnitConfigProvider value={unitConfig}>
-    <div className="v3-root" style={{ minHeight: "100vh", paddingBottom: "6rem" }}>
+    <div className="v3-root" style={{ minHeight: "100vh", paddingBottom: "7.5rem" }}>
       <style>{CSS}</style>
 
       {/* Header */}
@@ -2371,7 +2371,7 @@ export default function App() {
         className="v3-surface"
         style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 35, borderTop: "1px solid rgba(201,162,39,0.18)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="v3-scroll flex items-center" style={{ padding: "0.35rem 0.4rem", overflowX: "auto", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="v3-scroll flex items-center" style={{ padding: "0.35rem 0.25rem", overflowX: "auto", maxWidth: 1100, margin: "0 auto" }}>
         {[
           ["dashboard", "Dashboard", LayoutDashboard],
           ...(unitConfig.hasPos && canEdit ? [["kasir", "Kasir", ShoppingCart]] : []),
@@ -2387,7 +2387,7 @@ export default function App() {
             key={key}
             onClick={() => setActiveTab(key)}
             className="flex flex-col items-center justify-center"
-            style={{ flex: "1 0 auto", minWidth: 50, padding: "0.4rem 0.25rem", gap: "0.2rem" }}
+            style={{ flex: "1 0 auto", minWidth: 44, padding: "0.4rem 0.15rem", gap: "0.2rem" }}
             aria-current={activeTab === key ? "page" : undefined}
           >
             <TabIcon size={19} style={{ color: activeTab === key ? "#C9A227" : "#8A9099" }} />
@@ -2401,8 +2401,9 @@ export default function App() {
 
       {/* AI Assistant dihapus */}
 
-      {/* Mobile FAB — disembunyikan di tab Kasir karena bar keranjang memakai posisi yang sama */}
-      {canEdit && activeTab !== "kasir" && (
+      {/* Mobile FAB — disembunyikan di tab Kasir (bar keranjang memakai posisi sama) dan
+          di tab Cek Saldo (FAB menutupi kolom input saldo aktual sehingga sulit diketik) */}
+      {canEdit && activeTab !== "kasir" && activeTab !== "ceksaldo" && (
         <button
           onClick={() => { setEditingTx(null); setShowForm(true); }}
           className="v3-gold-bg md:hidden flex items-center justify-center"
@@ -4164,6 +4165,13 @@ ${FONT_IMPORTS}
 .v3-scroll::-webkit-scrollbar-thumb { background:rgba(201,162,39,0.4); border-radius:3px; }
 button { font-family:inherit; }
 *:focus-visible { outline:2px solid #C9A227; outline-offset:2px; }
+*, *::before, *::after { box-sizing: border-box; }
+/* Cegah zoom-otomatis iOS Safari: input dengan font < 16px memicu zoom saat difokus.
+   Di layar HP, paksa semua kolom input jadi 16px (tampilan tetap, hanya teks input
+   yang sedikit lebih besar) sehingga layar tidak tiba-tiba nge-zoom saat mengetik. */
+@media (max-width: 640px) {
+  input, select, textarea, .v3-input { font-size: 16px !important; }
+}
 @keyframes spin { from { transform:rotate(0deg);} to { transform:rotate(360deg);} }
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
 `;
