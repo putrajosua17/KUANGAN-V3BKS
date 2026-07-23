@@ -314,7 +314,7 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
         date,
         entity: (c.booking ? customer || c.booking.resource : customer) || "",
         status,
-        note: `Kasir ${number} · ${c.qty > 1 ? `${c.qty}x ` : ""}${c.name}${note ? " · " + note : ""}`,
+        note: `Kasir ${number} · ${c.qty > 1 ? `${c.qty}x ` : ""}${c.name}${c.booking ? ` · main ${c.booking.date}` : ""}${note ? " · " + note : ""}`,
         duration: c.booking ? c.booking.durationHours : undefined,
         receiptId,
       })));
@@ -665,8 +665,11 @@ function HourItemModal({ menuItem, bookingGroups, existingBookings, pendingBooki
   return (
     <ModalShell title={menuItem.name} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}>
-        <Field label="Tanggal">
+        <Field label="Tanggal Main (hari pemakaian lapangan)">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="v3-input" style={inputStyle} />
+          <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.3rem" }}>
+            Ini tanggal slot di kalender Jadwal. Kalau DP hari ini untuk main di hari lain, ubah ke tanggal mainnya — bukan tanggal bayar.
+          </p>
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label={group.label}>
@@ -759,6 +762,11 @@ function CheckoutModal({ cart, subtotal, methods, saving, error, onChangeQty, on
                 <p className="v3-muted v3-mono" style={{ fontSize: "0.7rem" }}>
                   {c.qty} × {formatRupiah(c.unitPrice)} = {formatRupiah(c.qty * c.unitPrice)}
                 </p>
+                {c.booking && (
+                  <p style={{ fontSize: "0.68rem", fontWeight: 700, color: "#C9A227", marginTop: "0.15rem" }}>
+                    📅 Masuk jadwal: {c.booking.date}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
                 {!c.booking && (
@@ -782,13 +790,18 @@ function CheckoutModal({ cart, subtotal, methods, saving, error, onChangeQty, on
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Tanggal">
+          <Field label={hasBookingItem ? "Tanggal Bayar" : "Tanggal"}>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="v3-input" style={inputStyle} />
           </Field>
           <Field label={hasBookingItem ? "Nama Pelanggan (untuk jadwal)" : "Nama Pelanggan (opsional)"}>
             <input value={customer} onChange={(e) => setCustomer(e.target.value)} className="v3-input" style={inputStyle} required={hasBookingItem} placeholder="mis. Pak Budi" />
           </Field>
         </div>
+        {hasBookingItem && (
+          <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "-0.4rem" }}>
+            Tanggal ini hanya untuk pencatatan pembayaran (transaksi). Slot jadwal memakai <b style={{ color: "#C9A227" }}>tanggal main</b> tiap lapangan yang ditandai 📅 di atas.
+          </p>
+        )}
 
         <Field label="Kantong Pembayaran">
           <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
