@@ -48,7 +48,7 @@ const STATUS_COLOR = {
   Maintenance: { bg: "#D1574A", fg: "#fff", label: "Maintenance", mark: "✕" },
 };
 
-export default function Booking({ unitId, bookingGroups, methods, canEdit, onRecordPayment }) {
+export default function Booking({ unitId, bookingGroups, methods, canEdit, onRecordPayment, onBookingDeleted }) {
   const [loaded, setLoaded] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [selectedDate, setSelectedDate] = useState(todayISO());
@@ -135,6 +135,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
         status: booking.status,
         note: `${group.label} ${booking.resource} · ${hourLabel(booking.startHour)}-${hourLabel(booking.startHour + booking.durationHours)}`,
         duration: booking.durationHours,
+        bookingId: booking.id,
       });
     }
     setShowForm(false);
@@ -145,6 +146,8 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
   const handleDelete = () => {
     if (!confirmDelete) return;
     persist(bookings.filter((b) => b.id !== confirmDelete));
+    // Hapus juga transaksi income yang terikat ke booking ini (sinkron ke Keuangan).
+    onBookingDeleted?.(confirmDelete);
     setConfirmDelete(null);
   };
 
@@ -321,7 +324,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
           <div className="v3-surface" style={{ borderRadius: 16, width: "100%", maxWidth: 360, padding: "1.3rem" }}>
             <div className="flex items-center gap-2" style={{ marginBottom: "0.8rem" }}>
               <AlertCircle size={18} className="v3-red" />
-              <p style={{ fontWeight: 700 }}>Hapus booking ini?</p>
+              <p style={{ fontWeight: 700 }}>Hapus booking ini? Transaksi pembayaran yang tertaut di Keuangan ikut terhapus.</p>
             </div>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(null)} className="v3-surface-alt" style={{ flex: 1, borderRadius: 10, padding: "0.6rem 0", fontSize: "0.85rem" }}>Batal</button>

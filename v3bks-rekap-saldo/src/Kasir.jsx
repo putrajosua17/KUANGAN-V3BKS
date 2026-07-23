@@ -287,6 +287,10 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
       const charged = allocateAfterDiscount(cart, discount);
       const receiptId = uid();
       const number = `#${String(receipts.length + 1).padStart(4, "0")}`;
+      // Id booking dibuat di depan supaya transaksi income & slot jadwal memakai id yang
+      // SAMA (bookingId) — jadi menghapus salah satunya otomatis menghapus pasangannya.
+      const bookingIdByKey = {};
+      cart.forEach((c) => { if (c.booking) bookingIdByKey[c.key] = uid() + Math.random().toString(36).slice(2, 6); });
 
       // 1. Cek bentrok booking terhadap data jadwal TERBARU (bisa saja berubah sejak tab dibuka).
       let freshBookings = bookings;
@@ -316,13 +320,14 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
         status,
         note: `Kasir ${number} · ${c.qty > 1 ? `${c.qty}x ` : ""}${c.name}${c.booking ? ` · main ${c.booking.date}` : ""}${note ? " · " + note : ""}`,
         duration: c.booking ? c.booking.durationHours : undefined,
+        bookingId: c.booking ? bookingIdByKey[c.key] : undefined,
         receiptId,
       })));
 
       // 3. Isi kalender Jadwal untuk item lapangan (income sudah dicatat kasir → recordPayment: false).
       if (cartBookings.length) {
         const newBookings = cartBookings.map((c, i) => ({
-          id: uid() + i,
+          id: bookingIdByKey[c.key],
           groupId: c.booking.groupId,
           resource: c.booking.resource,
           date: c.booking.date,

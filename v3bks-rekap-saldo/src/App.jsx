@@ -503,7 +503,9 @@ export default function App() {
 
   // Dipakai modul Membership & Booking untuk otomatis mencatat pembayaran sebagai
   // transaksi income, tanpa admin harus input manual dua kali.
-  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration, status }) => {
+  // bookingId (opsional): mengikat transaksi ini ke satu booking di Jadwal, supaya
+  // menghapus salah satu otomatis menghapus pasangannya (sinkron antar-tab).
+  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration, status, bookingId }) => {
     setTransactions((prev) => {
       const tx = {
         id: uid(),
@@ -516,6 +518,7 @@ export default function App() {
         status: status || "Lunas",
         note,
         duration,
+        ...(bookingId ? { bookingId } : {}),
         recordedBy: profile?.name || "",
       };
       const next = [...prev, tx];
@@ -540,6 +543,7 @@ export default function App() {
         status: en.status || "Lunas",
         note: en.note,
         ...(en.duration ? { duration: en.duration } : {}),
+        ...(en.bookingId ? { bookingId: en.bookingId } : {}),
         receiptId: en.receiptId,
         recordedBy: profile?.name || "",
       }));
@@ -569,9 +573,40 @@ export default function App() {
     });
   };
 
+  // Hapus satu booking di storage Jadwal berdasarkan id (dipakai saat transaksi terkait
+  // dihapus di tab Transaksi — pasangannya di Jadwal ikut terhapus supaya sinkron).
+  const deleteBookingFromStorage = async (bookingId) => {
+    try {
+      const res = await window.storage.get(bookingKeyFor(unitId), true);
+      const parsed = res?.value ? JSON.parse(res.value) : null;
+      const list = Array.isArray(parsed?.bookings) ? parsed.bookings : [];
+      const next = list.filter((b) => b.id !== bookingId);
+      if (next.length !== list.length) {
+        await window.storage.set(bookingKeyFor(unitId), JSON.stringify({ bookings: next }), true);
+      }
+    } catch (e) { /* diamkan — akan tersinkron saat Jadwal dimuat ulang */ }
+  };
+
+  // Dipanggil modul Jadwal saat sebuah booking dihapus: transaksi income yang terikat
+  // ke booking itu (bookingId sama) ikut dihapus dari Keuangan, jadi tidak perlu hapus
+  // dua kali dan tidak ada transaksi "yatim".
+  const handleBookingDeleted = (bookingId) => {
+    if (!bookingId) return;
+    setTransactions((prev) => {
+      const next = prev.filter((t) => t.bookingId !== bookingId);
+      if (next.length !== prev.length) {
+        persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      }
+      return next;
+    });
+  };
+
   const handleConfirmDelete = () => {
     if (!confirmDelete) return;
     if (confirmDelete.type === "transaction") {
+      // Kalau transaksi ini terikat ke booking di Jadwal, hapus juga booking-nya (sinkron).
+      const tx = transactions.find((t) => t.id === confirmDelete.id);
+      if (tx?.bookingId) deleteBookingFromStorage(tx.bookingId);
       setTransactions((prev) => {
         const next = prev.filter((t) => t.id !== confirmDelete.id);
         persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
@@ -2328,6 +2363,7 @@ export default function App() {
             methods={METHODS}
             canEdit={canEdit}
             onRecordPayment={handleRecordPayment}
+            onBookingDeleted={handleBookingDeleted}
           />
         )}
 
@@ -2471,7 +2507,13 @@ export default function App() {
 
       {confirmDelete && (
         <ConfirmModal
-          message={confirmDelete.type === "reconciliation" ? "Hapus catatan rekonsiliasi ini?" : "Hapus transaksi ini?"}
+          message={
+            confirmDelete.type === "reconciliation"
+              ? "Hapus catatan rekonsiliasi ini?"
+              : transactions.find((t) => t.id === confirmDelete.id)?.bookingId
+              ? "Hapus transaksi ini? Slot di Jadwal yang tertaut ikut terhapus otomatis."
+              : "Hapus transaksi ini?"
+          }
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDelete(null)}
         />
@@ -3426,6 +3468,11 @@ function TransactionRow({ tx, highlighted, canEdit = true, onEdit, onDelete }) {
           {(isPiutangKeluar || isPiutangBalik) && tx.category && (
             <span className="v3-muted" style={{ fontSize: "0.62rem", padding: "0.05rem 0.4rem", borderRadius: 999, background: "rgba(201,162,39,0.15)" }}>
               {tx.category}
+            </span>
+          )}
+          {tx.bookingId && (
+            <span className="flex items-center gap-1" style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.4rem", borderRadius: 999, background: "rgba(77,127,176,0.18)", color: "#7FB0DD" }} title="Terhubung ke slot di Jadwal — menghapus salah satu ikut menghapus pasangannya">
+              <CalendarDays size={10} /> Jadwal
             </span>
           )}
         </div>
