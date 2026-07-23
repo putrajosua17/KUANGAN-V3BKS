@@ -601,6 +601,43 @@ export default function App() {
     });
   };
 
+  // Total nominal transaksi yang sudah tercatat per booking (untuk hitung sisa pelunasan).
+  const paidByBooking = useMemo(() => {
+    const m = {};
+    transactions.forEach((t) => {
+      if (t.bookingId && (t.type === "income")) m[t.bookingId] = (m[t.bookingId] || 0) + t.amount;
+    });
+    return m;
+  }, [transactions]);
+
+  // Pelunasan DP: tandai transaksi lama (ber-bookingId) jadi Lunas, dan kalau ada sisa
+  // yang dibayar sekarang, catat sebagai transaksi income baru (Lunas) — tanpa membuat
+  // slot jadwal baru, jadi tidak bentrok. Dipakai modul Jadwal.
+  const handleSettleBooking = ({ bookingId, settlementAmount, method, date, category, entity }) => {
+    setTransactions((prev) => {
+      let next = prev.map((t) =>
+        t.bookingId === bookingId && t.status && t.status !== "Lunas" ? { ...t, status: "Lunas" } : t
+      );
+      if (Number(settlementAmount) > 0) {
+        next = [...next, {
+          id: uid(),
+          type: "income",
+          date,
+          amount: Number(settlementAmount),
+          category,
+          entity: entity || "",
+          method,
+          status: "Lunas",
+          note: "Pelunasan DP",
+          bookingId,
+          recordedBy: profile?.name || "",
+        }];
+      }
+      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      return next;
+    });
+  };
+
   const handleConfirmDelete = () => {
     if (!confirmDelete) return;
     if (confirmDelete.type === "transaction") {
@@ -2364,6 +2401,8 @@ export default function App() {
             canEdit={canEdit}
             onRecordPayment={handleRecordPayment}
             onBookingDeleted={handleBookingDeleted}
+            onSettleBooking={handleSettleBooking}
+            paidByBooking={paidByBooking}
           />
         )}
 

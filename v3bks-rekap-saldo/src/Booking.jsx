@@ -48,7 +48,7 @@ const STATUS_COLOR = {
   Maintenance: { bg: "#D1574A", fg: "#fff", label: "Maintenance", mark: "✕" },
 };
 
-export default function Booking({ unitId, bookingGroups, methods, canEdit, onRecordPayment, onBookingDeleted }) {
+export default function Booking({ unitId, bookingGroups, methods, canEdit, onRecordPayment, onBookingDeleted, onSettleBooking, paidByBooking = {} }) {
   const [loaded, setLoaded] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [selectedDate, setSelectedDate] = useState(todayISO());
@@ -57,6 +57,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
   const [editingBooking, setEditingBooking] = useState(null);
   const [prefill, setPrefill] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [settleTarget, setSettleTarget] = useState(null);
   const [error, setError] = useState("");
   const gridScrollRef = useRef(null);
 
@@ -141,6 +142,24 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
     setShowForm(false);
     setEditingBooking(null);
     setPrefill(null);
+  };
+
+  // Pelunasan DP: tandai booking jadi Lunas (slot sama, tanpa bentrok) + catat pelunasan
+  // di Keuangan lewat callback. Menghindari admin membuat entri/slot baru yang bentrok.
+  const handleSettle = ({ settlementAmount, method, date }) => {
+    const b = settleTarget;
+    if (!b) return;
+    const settledBooking = { ...b, status: "Lunas" };
+    persist(bookings.map((x) => (x.id === b.id ? settledBooking : x)));
+    onSettleBooking?.({
+      bookingId: b.id,
+      settlementAmount,
+      method,
+      date,
+      category: group.incomeCategory || `Rental ${group.label}`,
+      entity: b.clientName,
+    });
+    setSettleTarget(null);
   };
 
   const handleDelete = () => {
@@ -293,6 +312,11 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
               </div>
               <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                 <span className="v3-mono" style={{ fontSize: "0.8rem", fontWeight: 700 }}>{formatRupiah(b.amount)}</span>
+                {canEdit && b.status === "DP" && (
+                  <button onClick={() => setSettleTarget(b)} className="v3-gold-bg" style={{ borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.72rem", fontWeight: 700 }}>
+                    Lunasi
+                  </button>
+                )}
                 {canEdit && (
                   <>
                     <button onClick={() => { setEditingBooking(b); setShowForm(true); }} className="v3-surface flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 999 }} aria-label="Edit"><Pencil size={13} className="v3-muted" /></button>
@@ -333,6 +357,76 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
           </div>
         </div>
       )}
+
+      {settleTarget && (
+        <SettleModal
+          booking={settleTarget}
+          alreadyPaid={paidByBooking[settleTarget.id] || 0}
+          methods={methods}
+          onSettle={handleSettle}
+          onClose={() => setSettleTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal pelunasan DP: menandai booking jadi Lunas TANPA membuat slot baru (jadi tidak
+// bentrok), dan mencatat sisa pembayaran yang diterima sekarang sebagai transaksi income.
+function SettleModal({ booking, alreadyPaid, methods, onSettle, onClose }) {
+  const sisa = Math.max(0, (Number(booking.amount) || 0) - (Number(alreadyPaid) || 0));
+  const [date, setDate] = useState(todayISO());
+  const [method, setMethod] = useState(booking.method || methods[0]);
+  const [settlementAmount, setSettlementAmount] = useState(sisa);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSettle({ settlementAmount: Number(settlementAmount) || 0, method, date });
+  };
+
+  return (
+    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 50, padding: "1rem" }}>
+      <div className="v3-surface" style={{ borderRadius: 18, width: "100%", maxWidth: 400 }}>
+        <div className="flex items-center justify-between" style={{ padding: "1rem 1.2rem", borderBottom: "1px solid rgba(201,162,39,0.15)" }}>
+          <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700 }}>Pelunasan · {booking.resource}</p>
+          <button onClick={onClose} aria-label="Tutup"><X size={18} className="v3-muted" /></button>
+        </div>
+        <form onSubmit={handleSubmit} style={{ padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+          <div className="v3-surface-alt" style={{ borderRadius: 12, padding: "0.7rem 0.9rem" }}>
+            <div className="flex justify-between" style={{ fontSize: "0.76rem" }}>
+              <span className="v3-muted">Total booking</span>
+              <span className="v3-mono" style={{ fontWeight: 700 }}>{formatRupiah(booking.amount)}</span>
+            </div>
+            <div className="flex justify-between" style={{ fontSize: "0.76rem", marginTop: "0.2rem" }}>
+              <span className="v3-muted">Sudah tercatat (DP)</span>
+              <span className="v3-mono">{formatRupiah(alreadyPaid)}</span>
+            </div>
+            <div className="flex justify-between" style={{ fontSize: "0.82rem", fontWeight: 700, marginTop: "0.3rem", borderTop: "1px dashed rgba(201,162,39,0.25)", paddingTop: "0.3rem" }}>
+              <span>Sisa</span>
+              <span className="v3-mono v3-gold">{formatRupiah(sisa)}</span>
+            </div>
+          </div>
+          <Field label="Jumlah pelunasan diterima sekarang">
+            <input type="number" min="0" value={settlementAmount} onChange={(e) => setSettlementAmount(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }} />
+          </Field>
+          <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "-0.4rem" }}>
+            Kosongkan / isi 0 kalau DP yang tercatat sudah sama dengan total (cuma tandai Lunas, tanpa transaksi baru).
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Tanggal Bayar">
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }} />
+            </Field>
+            <Field label="Kantong">
+              <select value={method} onChange={(e) => setMethod(e.target.value)} className="v3-input" style={{ borderRadius: 8, padding: "0.5rem 0.6rem", width: "100%", fontSize: "0.85rem" }}>
+                {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+          </div>
+          <button type="submit" className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem" }}>
+            Tandai Lunas
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
