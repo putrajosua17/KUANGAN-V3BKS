@@ -4262,10 +4262,12 @@ ${FONT_IMPORTS}
 button { font-family:inherit; }
 *:focus-visible { outline:2px solid #C9A227; outline-offset:2px; }
 *, *::before, *::after { box-sizing: border-box; }
-/* Cegah zoom-otomatis iOS Safari: input dengan font < 16px memicu zoom saat difokus.
-   Di layar HP, paksa semua kolom input jadi 16px (tampilan tetap, hanya teks input
-   yang sedikit lebih besar) sehingga layar tidak tiba-tiba nge-zoom saat mengetik. */
-@media (max-width: 640px) {
+/* Cegah zoom-otomatis iOS Safari/iPadOS: input dengan font < 16px memicu zoom saat
+   difokus. Paksa semua kolom input jadi 16px di layar HP DAN semua perangkat sentuh
+   (termasuk iPad/tablet, yang dideteksi lewat hover:none + pointer:coarse) — tampilan
+   tetap, hanya teks input yang sedikit lebih besar, sehingga layar tidak tiba-tiba
+   nge-zoom saat mengetik. Desktop (pakai mouse) tidak terpengaruh. */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
   input, select, textarea, .v3-input { font-size: 16px !important; }
 }
 @keyframes spin { from { transform:rotate(0deg);} to { transform:rotate(360deg);} }
