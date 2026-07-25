@@ -406,6 +406,9 @@ export default function App() {
   // (mis. transaksi Kasir/Jadwal) supaya tulisan sempat sampai ke server sebelum dibaca
   // ulang — mencegah data baru "hilang" ketimpa muat-ulang yang membaca data lama.
   const lastWriteRef = useRef(0);
+  // Antrean tulis: semua penyimpanan dijalankan berurutan (satu selesai baru berikutnya),
+  // supaya beberapa perubahan cepat di perangkat yang sama tidak saling menimpa.
+  const writeQueueRef = useRef(Promise.resolve());
 
   const loadData = useCallback(async (isInitial) => {
     if (!unitId) { if (isInitial) setLoaded(true); return; }
@@ -484,29 +487,60 @@ export default function App() {
     setSelectedMonth(null);
   }, [selectedYear]);
 
-  const persist = useCallback(async (data) => {
-    if (!unitId) return;
-    lastWriteRef.current = Date.now();
-    setSyncing(true);
-    try {
-      await window.storage.set(storageKeyFor(unitId), JSON.stringify(data), true);
-      lastWriteRef.current = Date.now(); // tandai lagi setelah tulisan selesai
-      setLastSynced(new Date());
-      setErrorMsg("");
-    } catch (e) {
-      setErrorMsg("Gagal menyimpan data. Periksa koneksi lalu coba lagi.");
-    } finally {
-      setSyncing(false);
-    }
-  }, [unitId]);
+  // Penyimpanan aman-tabrakan (read-merge-write): sebelum menulis, BACA dulu data terbaru
+  // dari server, terapkan perubahan (transform) di atasnya, baru simpan. Jadi kalau orang
+  // lain menambah/mengubah transaksi lain hampir bersamaan, perubahannya tidak tertimpa.
+  // Semua penyimpanan diantre supaya berurutan (tidak balapan di perangkat yang sama).
+  const mergePersist = useCallback((transform) => {
+    const run = async () => {
+      if (!unitId) return;
+      lastWriteRef.current = Date.now();
+      setSyncing(true);
+      try {
+        let base = null;
+        try {
+          const res = await window.storage.get(storageKeyFor(unitId), true);
+          if (res?.value) base = JSON.parse(res.value);
+        } catch (e) { /* gagal baca (offline) — pakai state lokal sebagai dasar */ }
+        const safeBase = {
+          transactions: Array.isArray(base?.transactions) ? base.transactions : transactions,
+          initialBalances: base?.initialBalances || initialBalances,
+          reconciliations: Array.isArray(base?.reconciliations) ? base.reconciliations : reconciliations,
+          monthlyTarget: typeof base?.monthlyTarget === "number" ? base.monthlyTarget : monthlyTarget,
+          recurringCategories: Array.isArray(base?.recurringCategories) ? base.recurringCategories : recurringCategories,
+        };
+        const nextData = transform(safeBase);
+        await window.storage.set(storageKeyFor(unitId), JSON.stringify(nextData), true);
+        lastWriteRef.current = Date.now();
+        // Samakan state lokal dengan yang barusan ditulis (sudah termasuk perubahan orang lain).
+        setTransactions(nextData.transactions);
+        setInitialBalances(nextData.initialBalances);
+        setReconciliations(nextData.reconciliations);
+        setMonthlyTarget(nextData.monthlyTarget);
+        setRecurringCategories(nextData.recurringCategories);
+        setLastSynced(new Date());
+        setErrorMsg("");
+      } catch (e) {
+        setErrorMsg("Gagal menyimpan data. Periksa koneksi lalu coba lagi.");
+      } finally {
+        setSyncing(false);
+      }
+    };
+    writeQueueRef.current = writeQueueRef.current.then(run, run);
+    return writeQueueRef.current;
+  }, [unitId, transactions, initialBalances, reconciliations, monthlyTarget, recurringCategories]);
+
+  // Ubah daftar transaksi: update UI seketika (optimistik) lalu simpan aman-tabrakan.
+  // fn: (daftarTransaksi) => daftarTransaksiBaru — harus murni (buat objek tx baru di luar).
+  const commitTransactions = useCallback((fn) => {
+    setTransactions((prev) => fn(prev));
+    mergePersist((base) => ({ ...base, transactions: fn(base.transactions) }));
+  }, [mergePersist]);
 
   const handleSaveTransaction = (tx) => {
-    setTransactions((prev) => {
-      const exists = prev.some((t) => t.id === tx.id);
-      const next = exists ? prev.map((t) => (t.id === tx.id ? tx : t)) : [...prev, tx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    commitTransactions((txs) =>
+      txs.some((t) => t.id === tx.id) ? txs.map((t) => (t.id === tx.id ? tx : t)) : [...txs, tx]
+    );
     setShowForm(false);
     setEditingTx(null);
   };
@@ -516,71 +550,59 @@ export default function App() {
   // bookingId (opsional): mengikat transaksi ini ke satu booking di Jadwal, supaya
   // menghapus salah satu otomatis menghapus pasangannya (sinkron antar-tab).
   const handleRecordPayment = ({ amount, category, method, date, entity, note, duration, status, bookingId }) => {
-    setTransactions((prev) => {
-      const tx = {
-        id: uid(),
-        type: "income",
-        date,
-        amount,
-        category,
-        entity,
-        method,
-        status: status || "Lunas",
-        note,
-        duration,
-        ...(bookingId ? { bookingId } : {}),
-        recordedBy: profile?.name || "",
-      };
-      const next = [...prev, tx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const tx = {
+      id: uid(),
+      type: "income",
+      date,
+      amount,
+      category,
+      entity,
+      method,
+      status: status || "Lunas",
+      note,
+      duration,
+      ...(bookingId ? { bookingId } : {}),
+      recordedBy: profile?.name || "",
+    };
+    commitTransactions((txs) => [...txs, tx]);
   };
 
   // Dipakai modul Kasir: satu struk berisi beberapa item, semua tercatat sekaligus
   // sebagai transaksi income terpisah per item (supaya laporan per kategori tetap
   // akurat) dengan receiptId yang sama sebagai pengikat satu pembayaran.
   const handleRecordReceipt = (entries) => {
-    setTransactions((prev) => {
-      const txs = entries.map((en) => ({
-        id: uid(),
-        type: "income",
-        date: en.date,
-        amount: en.amount,
-        category: en.category,
-        entity: en.entity || "",
-        method: en.method,
-        status: en.status || "Lunas",
-        note: en.note,
-        ...(en.duration ? { duration: en.duration } : {}),
-        ...(en.bookingId ? { bookingId: en.bookingId } : {}),
-        receiptId: en.receiptId,
-        recordedBy: profile?.name || "",
-      }));
-      const next = [...prev, ...txs];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const txs = entries.map((en) => ({
+      id: uid(),
+      type: "income",
+      date: en.date,
+      amount: en.amount,
+      category: en.category,
+      entity: en.entity || "",
+      method: en.method,
+      status: en.status || "Lunas",
+      note: en.note,
+      ...(en.duration ? { duration: en.duration } : {}),
+      ...(en.bookingId ? { bookingId: en.bookingId } : {}),
+      receiptId: en.receiptId,
+      recordedBy: profile?.name || "",
+    }));
+    commitTransactions((prev) => [...prev, ...txs]);
   };
 
   // Dipakai modul Stok Barang untuk otomatis mencatat pembelian stok sebagai transaksi
   // expense, tanpa admin harus input manual dua kali.
   const handleRecordExpense = ({ amount, category, method, date, note }) => {
-    setTransactions((prev) => {
-      const tx = {
-        id: uid(),
-        type: "expense",
-        date,
-        amount,
-        category,
-        method,
-        note,
-        recordedBy: profile?.name || "",
-      };
-      const next = [...prev, tx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const tx = {
+      id: uid(),
+      type: "expense",
+      date,
+      amount,
+      category,
+      method,
+      note,
+      recordedBy: profile?.name || "",
+    };
+    commitTransactions((txs) => [...txs, tx]);
   };
 
   // Hapus satu booking di storage Jadwal berdasarkan id (dipakai saat transaksi terkait
@@ -602,13 +624,7 @@ export default function App() {
   // dua kali dan tidak ada transaksi "yatim".
   const handleBookingDeleted = (bookingId) => {
     if (!bookingId) return;
-    setTransactions((prev) => {
-      const next = prev.filter((t) => t.bookingId !== bookingId);
-      if (next.length !== prev.length) {
-        persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      }
-      return next;
-    });
+    commitTransactions((txs) => txs.filter((t) => t.bookingId !== bookingId));
   };
 
   // Total nominal transaksi yang sudah tercatat per booking (untuk hitung sisa pelunasan).
@@ -624,47 +640,39 @@ export default function App() {
   // yang dibayar sekarang, catat sebagai transaksi income baru (Lunas) — tanpa membuat
   // slot jadwal baru, jadi tidak bentrok. Dipakai modul Jadwal.
   const handleSettleBooking = ({ bookingId, settlementAmount, method, date, category, entity }) => {
-    setTransactions((prev) => {
-      let next = prev.map((t) =>
+    const settlementTx = Number(settlementAmount) > 0 ? {
+      id: uid(),
+      type: "income",
+      date,
+      amount: Number(settlementAmount),
+      category,
+      entity: entity || "",
+      method,
+      status: "Lunas",
+      note: "Pelunasan DP",
+      bookingId,
+      recordedBy: profile?.name || "",
+    } : null;
+    commitTransactions((txs) => {
+      let next = txs.map((t) =>
         t.bookingId === bookingId && t.status && t.status !== "Lunas" ? { ...t, status: "Lunas" } : t
       );
-      if (Number(settlementAmount) > 0) {
-        next = [...next, {
-          id: uid(),
-          type: "income",
-          date,
-          amount: Number(settlementAmount),
-          category,
-          entity: entity || "",
-          method,
-          status: "Lunas",
-          note: "Pelunasan DP",
-          bookingId,
-          recordedBy: profile?.name || "",
-        }];
-      }
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
+      if (settlementTx) next = [...next, settlementTx];
       return next;
     });
   };
 
   const handleConfirmDelete = () => {
     if (!confirmDelete) return;
+    const delId = confirmDelete.id;
     if (confirmDelete.type === "transaction") {
       // Kalau transaksi ini terikat ke booking di Jadwal, hapus juga booking-nya (sinkron).
-      const tx = transactions.find((t) => t.id === confirmDelete.id);
+      const tx = transactions.find((t) => t.id === delId);
       if (tx?.bookingId) deleteBookingFromStorage(tx.bookingId);
-      setTransactions((prev) => {
-        const next = prev.filter((t) => t.id !== confirmDelete.id);
-        persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-        return next;
-      });
+      commitTransactions((txs) => txs.filter((t) => t.id !== delId));
     } else if (confirmDelete.type === "reconciliation") {
-      setReconciliations((prev) => {
-        const next = prev.filter((r) => r.id !== confirmDelete.id);
-        persist({ transactions, initialBalances, reconciliations: next, monthlyTarget, recurringCategories });
-        return next;
-      });
+      setReconciliations((prev) => prev.filter((r) => r.id !== delId));
+      mergePersist((base) => ({ ...base, reconciliations: base.reconciliations.filter((r) => r.id !== delId) }));
     }
     setConfirmDelete(null);
   };
@@ -673,16 +681,13 @@ export default function App() {
     setInitialBalances(nextBalances);
     setMonthlyTarget(nextTarget);
     setRecurringCategories(nextRecurring);
-    persist({ transactions, initialBalances: nextBalances, reconciliations, monthlyTarget: nextTarget, recurringCategories: nextRecurring });
+    mergePersist((base) => ({ ...base, initialBalances: nextBalances, monthlyTarget: nextTarget, recurringCategories: nextRecurring }));
     setShowSettings(false);
   };
 
   const handleSaveReconciliation = (entry) => {
-    setReconciliations((prev) => {
-      const next = [...prev, entry];
-      persist({ transactions, initialBalances, reconciliations: next, monthlyTarget, recurringCategories });
-      return next;
-    });
+    setReconciliations((prev) => [...prev, entry]);
+    mergePersist((base) => ({ ...base, reconciliations: [...base.reconciliations, entry] }));
     // Auto-trigger analisa jika ada selisih
     if (Math.round(entry.totalDiff) !== 0) {
       const analysis = analyzeReconciliation(entry, transactions, METHODS);
@@ -693,29 +698,24 @@ export default function App() {
   };
 
   const handleTandaiLunas = (piutang, pelunasanData) => {
-    setTransactions((prev) => {
-      const pelunasanId = uid();
-      const pelunasanTx = {
-        id: pelunasanId,
-        type: "income",
-        date: pelunasanData.date,
-        amount: piutang.sisa,
-        category: piutang.category,
-        entity: piutang.entity || "",
-        status: "Lunas",
-        note: "Pelunasan otomatis dari panel Piutang Aktif",
-        recordedBy: pelunasanData.recordedBy || "",
-        ...(pelunasanData.splitMode
-          ? { splits: pelunasanData.splits }
-          : { method: pelunasanData.method }),
-      };
-      const updated = prev.map((t) =>
-        t.id === piutang.id ? { ...t, status: "Lunas" } : t
-      );
-      const next = [...updated, pelunasanTx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const pelunasanTx = {
+      id: uid(),
+      type: "income",
+      date: pelunasanData.date,
+      amount: piutang.sisa,
+      category: piutang.category,
+      entity: piutang.entity || "",
+      status: "Lunas",
+      note: "Pelunasan otomatis dari panel Piutang Aktif",
+      recordedBy: pelunasanData.recordedBy || "",
+      ...(pelunasanData.splitMode
+        ? { splits: pelunasanData.splits }
+        : { method: pelunasanData.method }),
+    };
+    commitTransactions((txs) => [
+      ...txs.map((t) => (t.id === piutang.id ? { ...t, status: "Lunas" } : t)),
+      pelunasanTx,
+    ]);
     setShowLunasModal(false);
     setSelectedPiutang(null);
   };
