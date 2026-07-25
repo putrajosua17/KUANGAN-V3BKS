@@ -116,7 +116,7 @@ export default function Booking({ unitId, bookingGroups, methods, canEdit, onRec
 
   const handleSave = (booking) => {
     if (hasConflict(booking.resource, booking.startHour, booking.durationHours, booking.id)) {
-      setError(`Bentrok! ${booking.resource} jam ${hourLabel(booking.startHour)} sudah ada booking lain di jam itu.`);
+      setError(`Bentrok! ${booking.resource} jam ${hourLabel(booking.startHour)} sudah ada booking lain. Kalau ini mau melunasi DP, jangan buat booking baru — tutup form ini, cari booking-nya di daftar "Booking Hari Ini" di bawah, lalu tap tombol "Lunasi".`);
       return;
     }
     setError("");

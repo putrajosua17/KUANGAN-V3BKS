@@ -303,7 +303,7 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
         } catch (e) { /* pakai data yang sudah dimuat */ }
         for (const c of cartBookings) {
           if (bookingsConflict(freshBookings, c.booking)) {
-            setCheckoutError(`Bentrok! ${c.booking.resource} tanggal ${c.booking.date} jam ${hourLabel(c.booking.startHour)} sudah terisi booking lain. Ubah atau hapus item lapangan itu dulu.`);
+            setCheckoutError(`Bentrok! ${c.booking.resource} tanggal ${c.booking.date} jam ${hourLabel(c.booking.startHour)} sudah ada booking. Kalau ini PELUNASAN DP, jangan input ulang di Kasir — buka tab Jadwal, cari booking itu, lalu tap tombol "Lunasi". Hapus dulu item lapangan ini dari keranjang.`);
             setSaving(false);
             return;
           }
@@ -695,8 +695,9 @@ function HourItemModal({ menuItem, bookingGroups, existingBookings, pendingBooki
           <input type="number" value={price} onChange={(e) => { setPrice(e.target.value); setPriceTouched(true); }} className="v3-input" style={inputStyle} />
         </Field>
         {conflict && (
-          <p className="flex items-center gap-1.5" style={{ color: "#D1574A", fontSize: "0.78rem" }}>
-            <AlertTriangle size={13} /> Bentrok! {resource} jam {hourLabel(Number(startHour))} tanggal {date} sudah terisi.
+          <p className="flex items-start gap-1.5" style={{ color: "#D1574A", fontSize: "0.75rem", lineHeight: 1.4 }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: "0.1rem" }} />
+            <span>Bentrok! {resource} jam {hourLabel(Number(startHour))} tanggal {date} sudah ada booking. Kalau tim ini <b>sudah DP</b> dan mau melunasi, jangan input di sini — buka tab <b>Jadwal</b>, lalu tap tombol <b>"Lunasi"</b> pada booking-nya.</span>
           </p>
         )}
         <button type="submit" disabled={conflict} className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem", opacity: conflict ? 0.5 : 1 }}>
