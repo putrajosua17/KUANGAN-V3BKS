@@ -140,7 +140,7 @@ function buildWhatsappText(unitName, receipt) {
   return lines.join("\n");
 }
 
-export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) {
+export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt, onSettleBooking, paidByBooking = {} }) {
   const methods = unitConfig.methods;
   const [loaded, setLoaded] = useState(false);
   const [menu, setMenu] = useState({ groups: [], items: [] });
@@ -155,6 +155,8 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
   const [priceItem, setPriceItem] = useState(null); // menu item harga-0 yang menanyakan harga
   const [viewReceipt, setViewReceipt] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showDp, setShowDp] = useState(true);
+  const [settleTarget, setSettleTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
 
@@ -401,6 +403,34 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
     }
   };
 
+  // Booking yang masih DP (belum lunas) — bisa dilunasi langsung dari Kasir tanpa
+  // membuat entri baru (jadi tidak bentrok). Diurutkan dari tanggal & jam paling awal.
+  const dpBookings = bookings
+    .filter((b) => b.status === "DP")
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.startHour - b.startHour));
+
+  // Pelunasan DP dari Kasir: tandai booking jadi Lunas (slot sama, tanpa bentrok) +
+  // catat pelunasan di Keuangan lewat callback.
+  const handleSettle = async ({ settlementAmount, method, date }) => {
+    const b = settleTarget;
+    if (!b) return;
+    const nextBookings = bookings.map((x) => (x.id === b.id ? { ...x, status: "Lunas" } : x));
+    setBookings(nextBookings);
+    try {
+      await window.storage.set(bookingKeyFor(unitId), JSON.stringify({ bookings: nextBookings }), true);
+    } catch (e) { /* akan tersinkron saat dimuat ulang */ }
+    const grp = (unitConfig.bookingGroups || []).find((g) => g.id === b.groupId);
+    onSettleBooking?.({
+      bookingId: b.id,
+      settlementAmount,
+      method,
+      date,
+      category: grp?.incomeCategory || "Rental",
+      entity: b.clientName,
+    });
+    setSettleTarget(null);
+  };
+
   if (!loaded) {
     return (
       <div className="flex items-center justify-center" style={{ padding: "3rem 0" }}>
@@ -490,6 +520,47 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
             );
           })}
         </div>
+      )}
+
+      {/* Pelunasan DP — booking yang belum lunas, bisa dilunasi langsung dari Kasir */}
+      {onSettleBooking && (unitConfig.bookingGroups?.length > 0) && (
+        <>
+          <button
+            onClick={() => setShowDp((v) => !v)}
+            className="v3-surface-alt flex items-center justify-between"
+            style={{ width: "100%", borderRadius: 12, padding: "0.65rem 0.9rem", marginBottom: "0.6rem", border: dpBookings.length > 0 ? "1px solid rgba(201,162,39,0.4)" : undefined }}
+          >
+            <span className="flex items-center gap-2" style={{ fontSize: "0.8rem", fontWeight: 700 }}>
+              <span className="v3-mono" style={{ minWidth: 18, height: 18, borderRadius: 999, background: dpBookings.length ? "#C9A227" : "#1B2025", color: dpBookings.length ? "#0B0D10" : "#8A9099", fontSize: "0.66rem", fontWeight: 800, display: "grid", placeItems: "center", padding: "0 5px" }}>½</span>
+              Pelunasan DP ({dpBookings.length})
+            </span>
+            {showDp ? <ChevronUp size={14} className="v3-muted" /> : <ChevronDown size={14} className="v3-muted" />}
+          </button>
+          {showDp && (
+            <div className="flex flex-col" style={{ gap: "0.4rem", marginBottom: "1rem" }}>
+              {dpBookings.length === 0 ? (
+                <p className="v3-muted" style={{ fontSize: "0.76rem", textAlign: "center", padding: "0.5rem 0" }}>Tidak ada DP yang belum lunas.</p>
+              ) : dpBookings.map((b) => {
+                const grp = (unitConfig.bookingGroups || []).find((g) => g.id === b.groupId);
+                return (
+                  <div key={b.id} className="v3-surface flex items-center justify-between" style={{ borderRadius: 10, padding: "0.55rem 0.8rem", borderLeft: "3px solid #C9A227" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: "0.78rem", fontWeight: 700 }}>{b.clientName || "-"} · {b.resource}</p>
+                      <p className="v3-muted" style={{ fontSize: "0.68rem" }}>
+                        {grp?.label ? grp.label + " · " : ""}{b.date} · {hourLabel(b.startHour)}-{hourLabel(b.startHour + b.durationHours)} · {formatRupiah(b.amount)}
+                      </p>
+                    </div>
+                    {canEdit && (
+                      <button onClick={() => setSettleTarget(b)} className="v3-gold-bg" style={{ flexShrink: 0, borderRadius: 999, padding: "0.35rem 0.85rem", fontSize: "0.74rem", fontWeight: 700 }}>
+                        Lunasi
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Riwayat struk */}
@@ -603,7 +674,74 @@ export default function Kasir({ unitId, unitConfig, canEdit, onRecordReceipt }) 
           onClose={() => setShowEditor(false)}
         />
       )}
+
+      {settleTarget && (
+        <SettleModal
+          booking={settleTarget}
+          alreadyPaid={paidByBooking[settleTarget.id] || 0}
+          methods={methods}
+          onSettle={handleSettle}
+          onClose={() => setSettleTarget(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// Modal pelunasan DP di Kasir: menandai booking jadi Lunas TANPA membuat slot baru
+// (jadi tidak bentrok), dan mencatat sisa pembayaran yang diterima sekarang.
+function SettleModal({ booking, alreadyPaid, methods, onSettle, onClose }) {
+  const sisa = Math.max(0, (Number(booking.amount) || 0) - (Number(alreadyPaid) || 0));
+  const [date, setDate] = useState(todayISO());
+  const [method, setMethod] = useState(booking.method || methods[0]);
+  const [settlementAmount, setSettlementAmount] = useState(sisa);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSettle({ settlementAmount: Number(settlementAmount) || 0, method, date });
+  };
+
+  return (
+    <ModalShell title={`Pelunasan · ${booking.resource}`} onClose={onClose} maxWidth={400}>
+      <form onSubmit={handleSubmit} style={{ padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+        <div className="v3-surface-alt" style={{ borderRadius: 12, padding: "0.7rem 0.9rem" }}>
+          <div className="flex justify-between" style={{ fontSize: "0.72rem" }}>
+            <span className="v3-muted">{booking.clientName || "-"} · {booking.date}</span>
+          </div>
+          <div className="flex justify-between" style={{ fontSize: "0.76rem", marginTop: "0.3rem" }}>
+            <span className="v3-muted">Total booking</span>
+            <span className="v3-mono" style={{ fontWeight: 700 }}>{formatRupiah(booking.amount)}</span>
+          </div>
+          <div className="flex justify-between" style={{ fontSize: "0.76rem", marginTop: "0.2rem" }}>
+            <span className="v3-muted">Sudah tercatat (DP)</span>
+            <span className="v3-mono">{formatRupiah(alreadyPaid)}</span>
+          </div>
+          <div className="flex justify-between" style={{ fontSize: "0.82rem", fontWeight: 700, marginTop: "0.3rem", borderTop: "1px dashed rgba(201,162,39,0.25)", paddingTop: "0.3rem" }}>
+            <span>Sisa</span>
+            <span className="v3-mono v3-gold">{formatRupiah(sisa)}</span>
+          </div>
+        </div>
+        <Field label="Jumlah pelunasan diterima sekarang">
+          <input type="number" min="0" value={settlementAmount} onChange={(e) => setSettlementAmount(e.target.value)} className="v3-input" style={inputStyle} />
+        </Field>
+        <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "-0.4rem" }}>
+          Kosongkan / isi 0 kalau DP yang tercatat sudah sama dengan total (cuma tandai Lunas).
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Tanggal Bayar">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="v3-input" style={inputStyle} />
+          </Field>
+          <Field label="Kantong">
+            <select value={method} onChange={(e) => setMethod(e.target.value)} className="v3-input" style={inputStyle}>
+              {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </Field>
+        </div>
+        <button type="submit" className="v3-gold-bg" style={{ borderRadius: 10, padding: "0.65rem 0", fontWeight: 700, fontSize: "0.9rem" }}>
+          Tandai Lunas
+        </button>
+      </form>
+    </ModalShell>
   );
 }
 

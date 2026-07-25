@@ -2441,6 +2441,8 @@ export default function App() {
             unitConfig={unitConfig}
             canEdit={canEdit}
             onRecordReceipt={handleRecordReceipt}
+            onSettleBooking={handleSettleBooking}
+            paidByBooking={paidByBooking}
           />
         )}
 
