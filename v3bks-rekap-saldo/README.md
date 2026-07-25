@@ -203,3 +203,14 @@ Modul ini diaktifkan lewat flag `hasPos` per unit di `src/unitsConfig.js`.
 WhatsApp otomatis (butuh akun WhatsApp Business API seperti Fonnte/Twilio/WA Cloud API
 resmi beserta API key-nya) dan backup terjadwal otomatis (butuh Firebase Cloud Functions
 di paket berbayar Blaze).
+
+## Peningkatan keandalan & jejak audit
+
+- **Aman input bersamaan (read-merge-write)** — setiap penyimpanan keuangan membaca dulu
+  data terbaru dari server, menempelkan perubahan, baru menyimpan. Jadi kalau dua orang
+  menambah/mengubah transaksi berbeda hampir bersamaan, tidak ada yang tertimpa/hilang.
+- **Riwayat Aktivitas (jejak audit)** — menu ⋮ (khusus Admin) → "Riwayat Aktivitas"
+  menampilkan siapa menambah/mengubah/menghapus transaksi, pelunasan, pengaturan, dst.,
+  lengkap dengan waktu & pelakunya (500 aktivitas terakhir per unit, tersimpan di
+  `v3bks_audit__{unit}`). **Perlu publish ulang `database.rules.json`** (ada 3 key baru
+  `v3bks_audit__*`) supaya jejak audit bisa tersimpan.

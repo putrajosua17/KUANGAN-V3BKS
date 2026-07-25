@@ -24,7 +24,7 @@ import Inventory from "./Inventory.jsx";
 import Kasir from "./Kasir.jsx";
 import {
   storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY,
-  membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor,
+  membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor, auditKeyFor,
 } from "./storageKeys.js";
 
 function getAccessibleUnits(profile) {
@@ -305,6 +305,7 @@ export default function App() {
   const [showUserManager, setShowUserManager] = useState(false);
   const [showUnitMenu, setShowUnitMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const [showConsolidated, setShowConsolidated] = useState(false);
 
   useEffect(() => {
@@ -537,10 +538,30 @@ export default function App() {
     mergePersist((base) => ({ ...base, transactions: fn(base.transactions) }));
   }, [mergePersist]);
 
+  // Jejak audit: catat siapa melakukan aksi apa & kapan (best-effort, tidak mengganggu
+  // operasi utama). Disimpan per unit, hanya 500 aktivitas terakhir yang dipertahankan.
+  const auditQueueRef = useRef(Promise.resolve());
+  const logAudit = useCallback((action, summary) => {
+    if (!unitId) return;
+    const entry = { id: uid(), ts: Date.now(), user: profile?.name || profile?.email || "?", action, summary };
+    const run = async () => {
+      try {
+        const res = await window.storage.get(auditKeyFor(unitId), true);
+        const parsed = res?.value ? JSON.parse(res.value) : null;
+        const list = Array.isArray(parsed?.entries) ? parsed.entries : [];
+        const next = [entry, ...list].slice(0, 500);
+        await window.storage.set(auditKeyFor(unitId), JSON.stringify({ entries: next }), true);
+      } catch (e) { /* audit best-effort — jangan ganggu alur utama */ }
+    };
+    auditQueueRef.current = auditQueueRef.current.then(run, run);
+  }, [unitId, profile]);
+
   const handleSaveTransaction = (tx) => {
+    const exists = transactions.some((t) => t.id === tx.id);
     commitTransactions((txs) =>
       txs.some((t) => t.id === tx.id) ? txs.map((t) => (t.id === tx.id ? tx : t)) : [...txs, tx]
     );
+    logAudit(exists ? "ubah" : "tambah", `Transaksi ${tx.type}${tx.category ? " · " + tx.category : ""} · ${formatRupiah(tx.amount)}`);
     setShowForm(false);
     setEditingTx(null);
   };
@@ -565,6 +586,7 @@ export default function App() {
       recordedBy: profile?.name || "",
     };
     commitTransactions((txs) => [...txs, tx]);
+    logAudit("tambah", `Pembayaran · ${category} · ${formatRupiah(amount)}${status && status !== "Lunas" ? " (" + status + ")" : ""}`);
   };
 
   // Dipakai modul Kasir: satu struk berisi beberapa item, semua tercatat sekaligus
@@ -587,6 +609,8 @@ export default function App() {
       recordedBy: profile?.name || "",
     }));
     commitTransactions((prev) => [...prev, ...txs]);
+    const total = entries.reduce((s, en) => s + (en.amount || 0), 0);
+    logAudit("tambah", `Penjualan Kasir · ${entries.length} item · ${formatRupiah(total)}`);
   };
 
   // Dipakai modul Stok Barang untuk otomatis mencatat pembelian stok sebagai transaksi
@@ -603,6 +627,7 @@ export default function App() {
       recordedBy: profile?.name || "",
     };
     commitTransactions((txs) => [...txs, tx]);
+    logAudit("tambah", `Pengeluaran · ${category} · ${formatRupiah(amount)}`);
   };
 
   // Hapus satu booking di storage Jadwal berdasarkan id (dipakai saat transaksi terkait
@@ -625,6 +650,7 @@ export default function App() {
   const handleBookingDeleted = (bookingId) => {
     if (!bookingId) return;
     commitTransactions((txs) => txs.filter((t) => t.bookingId !== bookingId));
+    logAudit("hapus", "Booking dihapus (beserta transaksi terkait)");
   };
 
   // Total nominal transaksi yang sudah tercatat per booking (untuk hitung sisa pelunasan).
@@ -660,6 +686,7 @@ export default function App() {
       if (settlementTx) next = [...next, settlementTx];
       return next;
     });
+    logAudit("pelunasan", `Pelunasan DP · ${formatRupiah(Number(settlementAmount) || 0)}`);
   };
 
   const handleConfirmDelete = () => {
@@ -670,9 +697,11 @@ export default function App() {
       const tx = transactions.find((t) => t.id === delId);
       if (tx?.bookingId) deleteBookingFromStorage(tx.bookingId);
       commitTransactions((txs) => txs.filter((t) => t.id !== delId));
+      logAudit("hapus", `Transaksi ${tx?.category || tx?.type || ""} · ${formatRupiah(tx?.amount || 0)}`);
     } else if (confirmDelete.type === "reconciliation") {
       setReconciliations((prev) => prev.filter((r) => r.id !== delId));
       mergePersist((base) => ({ ...base, reconciliations: base.reconciliations.filter((r) => r.id !== delId) }));
+      logAudit("hapus", "Catatan rekonsiliasi (cek saldo)");
     }
     setConfirmDelete(null);
   };
@@ -682,12 +711,14 @@ export default function App() {
     setMonthlyTarget(nextTarget);
     setRecurringCategories(nextRecurring);
     mergePersist((base) => ({ ...base, initialBalances: nextBalances, monthlyTarget: nextTarget, recurringCategories: nextRecurring }));
+    logAudit("ubah", "Pengaturan (saldo awal / target / kategori rutin)");
     setShowSettings(false);
   };
 
   const handleSaveReconciliation = (entry) => {
     setReconciliations((prev) => [...prev, entry]);
     mergePersist((base) => ({ ...base, reconciliations: [...base.reconciliations, entry] }));
+    logAudit("tambah", `Cek saldo${Math.round(entry.totalDiff) !== 0 ? " (selisih " + formatRupiah(entry.totalDiff) + ")" : " (cocok)"}`);
     // Auto-trigger analisa jika ada selisih
     if (Math.round(entry.totalDiff) !== 0) {
       const analysis = analyzeReconciliation(entry, transactions, METHODS);
@@ -716,6 +747,7 @@ export default function App() {
       ...txs.map((t) => (t.id === piutang.id ? { ...t, status: "Lunas" } : t)),
       pelunasanTx,
     ]);
+    logAudit("pelunasan", `Pelunasan piutang · ${formatRupiah(piutang.sisa)}`);
     setShowLunasModal(false);
     setSelectedPiutang(null);
   };
@@ -1513,6 +1545,15 @@ export default function App() {
                         style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
                       >
                         <Users size={15} className="v3-muted" /> Kelola Pengguna
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowAudit(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <FileText size={15} className="v3-muted" /> Riwayat Aktivitas
                       </button>
                     )}
                     <button
@@ -2570,6 +2611,10 @@ export default function App() {
 
       {showUserManager && (
         <UserManager currentUid={authUser?.uid} onClose={() => setShowUserManager(false)} />
+      )}
+
+      {showAudit && (
+        <AuditModal unitId={unitId} unitName={unitConfig.name} onClose={() => setShowAudit(false)} />
       )}
     </div>
     </UnitConfigProvider>
@@ -4234,6 +4279,75 @@ function ReconciliationModal({ transactions, initialBalances, onSave, onClose })
             Simpan Rekonsiliasi
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Panel Riwayat Aktivitas (jejak audit) — read-only, khusus Admin. Menampilkan siapa
+// melakukan apa & kapan (500 aktivitas terakhir per unit).
+const AUDIT_TONE = {
+  tambah: { bg: "rgba(76,175,97,0.16)", fg: "#4CAF61", label: "TAMBAH" },
+  ubah: { bg: "rgba(201,162,39,0.16)", fg: "#C9A227", label: "UBAH" },
+  hapus: { bg: "rgba(209,87,74,0.16)", fg: "#D1574A", label: "HAPUS" },
+  pelunasan: { bg: "rgba(77,127,176,0.18)", fg: "#7FB0DD", label: "PELUNASAN" },
+};
+function AuditModal({ unitId, unitName, onClose }) {
+  const [entries, setEntries] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get(auditKeyFor(unitId), true);
+        const parsed = res?.value ? JSON.parse(res.value) : null;
+        setEntries(Array.isArray(parsed?.entries) ? parsed.entries : []);
+      } catch (e) {
+        setEntries([]);
+      }
+    })();
+  }, [unitId]);
+
+  return (
+    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 55, padding: "1rem" }}>
+      <div className="v3-surface" style={{ borderRadius: 18, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="flex items-center justify-between" style={{ padding: "1rem 1.2rem", borderBottom: "1px solid rgba(201,162,39,0.15)", position: "sticky", top: 0, background: "#15191D", zIndex: 1 }}>
+          <div>
+            <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700 }}>Riwayat Aktivitas</p>
+            <p className="v3-muted" style={{ fontSize: "0.68rem" }}>{unitName} · siapa mengubah apa & kapan</p>
+          </div>
+          <button onClick={onClose} aria-label="Tutup"><X size={18} className="v3-muted" /></button>
+        </div>
+        <div style={{ padding: "1rem 1.2rem" }}>
+          {entries === null ? (
+            <div className="flex items-center justify-center" style={{ padding: "2rem 0" }}>
+              <Loader2 className="v3-gold animate-spin" size={22} />
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex flex-col items-center text-center" style={{ padding: "2rem 1rem" }}>
+              <FileText size={26} className="v3-muted" style={{ marginBottom: "0.6rem" }} />
+              <p className="v3-muted" style={{ fontSize: "0.85rem" }}>Belum ada aktivitas tercatat untuk unit ini.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col" style={{ gap: "0.5rem" }}>
+              {entries.map((e) => {
+                const tone = AUDIT_TONE[e.action] || { bg: "rgba(255,255,255,0.06)", fg: "#8A9099", label: (e.action || "").toUpperCase() };
+                const d = new Date(e.ts);
+                const when = d.toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div key={e.id} className="v3-surface-alt flex items-start gap-2.5" style={{ borderRadius: 10, padding: "0.6rem 0.75rem" }}>
+                    <span style={{ flexShrink: 0, marginTop: "0.1rem", fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.04em", padding: "0.15rem 0.45rem", borderRadius: 999, background: tone.bg, color: tone.fg }}>{tone.label}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.3 }}>{e.summary}</p>
+                      <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.15rem" }}>{when} · oleh {e.user}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="v3-muted" style={{ fontSize: "0.66rem", textAlign: "center", marginTop: "0.4rem" }}>
+                Menampilkan hingga 500 aktivitas terakhir.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
