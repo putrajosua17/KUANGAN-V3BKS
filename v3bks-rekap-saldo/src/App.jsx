@@ -402,6 +402,11 @@ export default function App() {
     modalOpenRef.current = showForm || showSettings || showReconModal || showLunasModal || showTemplateManager || showUserManager || !!confirmDelete;
   }, [showForm, showSettings, showReconModal, showLunasModal, showTemplateManager, showUserManager, confirmDelete]);
 
+  // Waktu penyimpanan lokal terakhir. Auto-refresh dijeda sebentar sesudah ada simpanan
+  // (mis. transaksi Kasir/Jadwal) supaya tulisan sempat sampai ke server sebelum dibaca
+  // ulang — mencegah data baru "hilang" ketimpa muat-ulang yang membaca data lama.
+  const lastWriteRef = useRef(0);
+
   const loadData = useCallback(async (isInitial) => {
     if (!unitId) { if (isInitial) setLoaded(true); return; }
     if (!isInitial) setSyncing(true);
@@ -467,7 +472,10 @@ export default function App() {
     setLoaded(false);
     loadData(true);
     const interval = setInterval(() => {
-      if (!modalOpenRef.current) loadData(false);
+      // Jangan muat ulang kalau ada modal terbuka, atau baru saja ada penyimpanan lokal
+      // (beri jeda ~12 detik supaya tulisan sampai ke server dulu — cegah data baru
+      // ketimpa data lama, mis. transaksi Kasir yang belum sempat tersinkron).
+      if (!modalOpenRef.current && Date.now() - lastWriteRef.current > 12000) loadData(false);
     }, 25000);
     return () => clearInterval(interval);
   }, [loadData, unitId]);
@@ -478,9 +486,11 @@ export default function App() {
 
   const persist = useCallback(async (data) => {
     if (!unitId) return;
+    lastWriteRef.current = Date.now();
     setSyncing(true);
     try {
       await window.storage.set(storageKeyFor(unitId), JSON.stringify(data), true);
+      lastWriteRef.current = Date.now(); // tandai lagi setelah tulisan selesai
       setLastSynced(new Date());
       setErrorMsg("");
     } catch (e) {
