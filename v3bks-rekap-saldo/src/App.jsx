@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
   LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
-  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart, MoreVertical,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart, MoreVertical, BookOpen,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
@@ -22,6 +22,7 @@ import Payroll from "./Payroll.jsx";
 import Booking from "./Booking.jsx";
 import Inventory from "./Inventory.jsx";
 import Kasir from "./Kasir.jsx";
+import Jurnal from "./Jurnal.jsx";
 import {
   storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY,
   membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor, auditKeyFor,
@@ -2488,6 +2489,15 @@ export default function App() {
           />
         )}
 
+        {activeTab === "jurnal" && canEdit && (
+          <Jurnal
+            unitId={unitId}
+            unitConfig={unitConfig}
+            canEdit={canEdit}
+            onAudit={logAudit}
+          />
+        )}
+
         <p className="v3-muted" style={{ fontSize: "0.7rem", textAlign: "center", marginTop: "2rem" }}>
           {unitConfig.name} &middot; {unitConfig.tagline}
         </p>
@@ -2510,6 +2520,7 @@ export default function App() {
           ...(unitConfig.hasPayroll ? [["payroll", "Payroll", Wallet]] : []),
           ...(unitConfig.hasInventory ? [["stok", "Stok", Package]] : []),
           ["ceksaldo", "Saldo", ShieldCheck],
+          ...(canEdit ? [["jurnal", "Jurnal", BookOpen]] : []),
         ].map(([key, label, TabIcon]) => (
           <button
             key={key}
@@ -2531,7 +2542,7 @@ export default function App() {
 
       {/* Mobile FAB — disembunyikan di tab Kasir (bar keranjang memakai posisi sama) dan
           di tab Cek Saldo (FAB menutupi kolom input saldo aktual sehingga sulit diketik) */}
-      {canEdit && activeTab !== "kasir" && activeTab !== "ceksaldo" && (
+      {canEdit && activeTab !== "kasir" && activeTab !== "ceksaldo" && activeTab !== "jurnal" && (
         <button
           onClick={() => { setEditingTx(null); setShowForm(true); }}
           className="v3-gold-bg md:hidden flex items-center justify-center"

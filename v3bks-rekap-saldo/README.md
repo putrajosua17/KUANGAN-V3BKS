@@ -214,3 +214,46 @@ di paket berbayar Blaze).
   lengkap dengan waktu & pelakunya (500 aktivitas terakhir per unit, tersimpan di
   `v3bks_audit__{unit}`). **Perlu publish ulang `database.rules.json`** (ada 3 key baru
   `v3bks_audit__*`) supaya jejak audit bisa tersimpan.
+
+## Modul Pembukuan (Jurnal berpasangan / double-entry) — semua unit
+
+Lapisan pembukuan akuntansi resmi yang berjalan di **belakang** tab operasional
+(Transaksi/Kasir/Jadwal tetap jadi antarmuka input cepat — modul ini tidak menggantinya).
+Dibangun sesuai PRD "Sistem Jurnal Akuntansi Berpasangan V3BKS". Tersedia di tab **Jurnal**
+untuk role Admin & Finance. Data tersimpan terpisah di `v3bks_journal__{unit}`, jadi tidak
+mengganggu data operasional yang sudah ada.
+
+Isi tab (sub-menu di dalamnya):
+
+- **Input Cepat** — form bahasa awam (staf tidak perlu paham debit-kredit). Pilih jenis
+  transaksi (Pemasukan Lunas, Terima DP, Akui Pendapatan hari main, Pengeluaran, Setor
+  Tunai/Pindah Kantong, Setor PBJT, Bayar/Catat Utang, Kasbon) → jurnal berpasangan
+  otomatis terbentuk, dengan **pratinjau baris debit/kredit** sebelum disimpan.
+- **Jurnal Umum** — semua transaksi (satu No. Bukti bisa banyak baris), bisa disaring per
+  bulan/kantong/akun. Baris yang **tidak seimbang ditandai merah**.
+- **Kas & Bank** — buku besar saldo berjalan per kantong (Cash/BCA/Mandiri/BNI/AYO), saldo
+  negatif otomatis ditandai. Setor tunai antar kantong **tidak menambah pendapatan**.
+- **Kewajiban** — panel paling penting: saldo Utang PBJT, PPh, Fee FG/Wasit, Reimburse,
+  Utang Gaji, dan Pendapatan Diterima di Muka (DP), plus rincian DP per pelanggan dan umur
+  piutang/reimburse. Mencegah kejadian "uang pajak terpakai tanpa disadari".
+- **Neraca Saldo** & **Laba Rugi** — otomatis dari jurnal (total debit = kredit; pendapatan
+  net-PBJT dikurangi beban per periode).
+- **Saldo Awal** — jurnal pembuka per 31 Agustus 2026 (isi saldo kas fisik & rekening
+  koran; selisih otomatis masuk Ekuitas Pemilik).
+- **Bagan Akun** — daftar akun (bisa tambah akun baru) + **Setelan PBJT**.
+
+**Perlakuan DP & PBJT** (inti PRD):
+
+- **DP = liabilitas**, bukan pendapatan. Terima DP → Debit Kas/Bank, Kredit *Pendapatan
+  Diterima di Muka*. Baru saat hari main tiba → Debit *Pendapatan Diterima di Muka*, Kredit
+  Pendapatan + Kredit *Utang PBJT*.
+- **PBJT dipisah dari pendapatan** setiap pengakuan rental. Asumsi harga (Q1 PRD) dan tarif
+  (Q2) dibuat sebagai **setelan yang bisa diubah** di *Bagan Akun → Setelan PBJT*:
+  - "Harga sudah termasuk PBJT" → PBJT = harga × tarif/(100+tarif)
+  - "Harga belum termasuk PBJT" → PBJT = harga × tarif/100
+  - Default: tarif 10%, harga sudah termasuk. Kalau Bapenda menjawab 5% atau harga
+    ternyata belum termasuk pajak, cukup ubah setelan ini — semua rumus ikut menyesuaikan
+    tanpa deploy ulang.
+
+> **Perlu publish ulang `database.rules.json`** (ada 3 key baru `v3bks_journal__*`) supaya
+> data pembukuan bisa tersimpan.
