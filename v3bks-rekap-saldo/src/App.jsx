@@ -4,31 +4,37 @@ import {
   Plus, X, Landmark, Banknote, ArrowLeftRight, Pencil, Trash2,
   TrendingUp, TrendingDown, RefreshCw, Settings, Search, Loader2,
   AlertCircle, CheckCircle2, AlertTriangle, ClipboardCheck, Trophy, BarChart3, Wallet, Download,
-  LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins
+  LayoutDashboard, ListChecks, Tag, ShieldCheck, Zap, FileText, Clock, HandCoins,
+  LogOut, Users, ChevronDown, Building2, Eye, UserCheck, CalendarDays, Package, DatabaseBackup, ShoppingCart, MoreVertical, BookOpen,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { UNITS, getUnit } from "./unitsConfig.js";
+import { UnitConfigProvider, useUnitConfig } from "./unitConfigContext.jsx";
+import { subscribeAuth, getUserProfile, logout as authLogout, recordLastLogin } from "./auth.js";
+import Login from "./Login.jsx";
+import UserManager from "./UserManager.jsx";
+import ConsolidatedDashboard from "./ConsolidatedDashboard.jsx";
+import Membership from "./Membership.jsx";
+import Payroll from "./Payroll.jsx";
+import Booking from "./Booking.jsx";
+import Inventory from "./Inventory.jsx";
+import Kasir from "./Kasir.jsx";
+import Jurnal from "./Jurnal.jsx";
+import {
+  storageKeyFor, templatesKeyFor, LEGACY_STORAGE_KEY, LEGACY_TEMPLATES_KEY,
+  membershipKeyFor, payrollKeyFor, bookingKeyFor, inventoryKeyFor, auditKeyFor,
+} from "./storageKeys.js";
 
-const STORAGE_KEY = "v3bks_finance_data";
-const TEMPLATES_KEY = "v3bks_templates";
-const METHODS = ["Cash", "BCA", "Mandiri", "BNI"];
-const METHOD_META = {
-  Cash: { accent: "#C9A227", icon: Banknote },
-  BCA: { accent: "#4D7FB0", icon: Landmark },
-  Mandiri: { accent: "#3F9E8A", icon: Landmark },
-  BNI: { accent: "#D9772E", icon: Landmark },
-};
-const INCOME_CATEGORIES = [
-  "Rental", "Photographer", "Wasit", "Recording", "New Member",
-  "Sewa Rompi", "Fee Samkot", "Event/Turnamen", "Sponsor", "Lainnya",
-];
-const EXPENSE_CATEGORIES = [
-  "Gaji Karyawan", "Cleaning Service", "Fee Photographer", "Listrik", "Air",
-  "Solar", "Alat Kebersihan", "Stock Bola", "Maintenance", "Wifi",
-  "Telkomsel", "Marketing", "Pajak", "Bonus/Insentif/THR", "Other Expenses", "Lainnya",
-];
+function getAccessibleUnits(profile) {
+  if (!profile) return [];
+  const units = profile.units || {};
+  if (profile.role === "admin" || units["*"]) return UNITS;
+  return UNITS.filter((u) => units[u.id]);
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
 const STATUS_OPTIONS = ["Lunas", "DP", "Belum Lunas"];
 const STATUS_META = {
@@ -36,19 +42,7 @@ const STATUS_META = {
   DP: { color: "#C9A227" },
   "Belum Lunas": { color: "#D1574A" },
 };
-const DEFAULT_RECURRING_CATEGORIES = ["Gaji Karyawan", "Listrik", "Air", "Wifi", "Telkomsel", "Pajak"];
 const PIUTANG_CATEGORIES = ["Owner", "PT / Perusahaan Lain"];
-const BREAKEVEN = {
-  fixedCost: 58800000,
-  variableCostPerHour: 70000,
-  targetBreakEven: 65000000,
-  targetHealthy: 87000000,
-  targetStrong: 97000000,
-  totalHoursPerMonth: 493,
-  marginWeekdayOffPeak: 530000,
-  marginWeekendOffPeak: 650000,
-  marginBlended: 566000,
-};
 
 
 function formatRupiah(n) {
@@ -78,11 +72,11 @@ function nDaysAgoISO(n) {
   return d.toISOString().slice(0, 10);
 }
 
-function analyzeReconciliation(recon, transactions) {
+function analyzeReconciliation(recon, transactions, methods) {
   if (!recon) return [];
   const results = [];
 
-  METHODS.forEach((method) => {
+  methods.forEach((method) => {
     const perM = recon.perMethod?.[method];
     if (!perM) return;
     const diff = perM.diff;
@@ -199,11 +193,11 @@ function analyzeReconciliation(recon, transactions) {
   return results;
 }
 
-function detectAnomalies(transactions, balances) {
+function detectAnomalies(transactions, balances, methods) {
   const issues = [];
 
   // 1. Saldo negatif per kantong (kondisi saat ini)
-  METHODS.forEach((m) => {
+  methods.forEach((m) => {
     if ((balances[m] || 0) < 0) {
       issues.push({
         id: "neg_" + m,
@@ -296,11 +290,77 @@ function computeBalanceAsOf(transactions, initialBalances, dateStr) {
   return bal;
 }
 
+function zeroBalances(methods) {
+  return methods.reduce((acc, m) => ({ ...acc, [m]: 0 }), {});
+}
+function zeroActuals(methods) {
+  return methods.reduce((acc, m) => ({ ...acc, [m]: "" }), {});
+}
+
 export default function App() {
+  // ── Auth & unit bisnis ──
+  const [authUser, setAuthUser] = useState(undefined); // undefined = belum dicek, null = belum login
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [unitId, setUnitId] = useState(() => localStorage.getItem("v3bks_last_unit") || null);
+  const [showUserManager, setShowUserManager] = useState(false);
+  const [showUnitMenu, setShowUnitMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  const [showConsolidated, setShowConsolidated] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeAuth(async (u) => {
+      setAuthUser(u || null);
+      if (u) {
+        setProfileLoading(true);
+        try {
+          const p = await getUserProfile(u.uid);
+          setProfile(p);
+          recordLastLogin(u.uid);
+        } catch (e) {
+          setProfile(null);
+        } finally {
+          setProfileLoading(false);
+        }
+      } else {
+        setProfile(null);
+        setProfileLoading(false);
+      }
+    });
+    return unsub;
+  }, []);
+
+  const accessibleUnits = useMemo(() => getAccessibleUnits(profile), [profile]);
+
+  useEffect(() => {
+    if (accessibleUnits.length === 0) return;
+    if (!unitId || !accessibleUnits.some((u) => u.id === unitId)) {
+      setUnitId(accessibleUnits[0].id);
+    }
+  }, [accessibleUnits]);
+
+  useEffect(() => {
+    if (unitId) localStorage.setItem("v3bks_last_unit", unitId);
+  }, [unitId]);
+
+  const unitConfig = useMemo(() => getUnit(unitId || "mini-soccer"), [unitId]);
+  const METHODS = unitConfig.methods;
+  const METHOD_META = unitConfig.methodMeta;
+  const INCOME_CATEGORIES = unitConfig.incomeCategories;
+  const EXPENSE_CATEGORIES = unitConfig.expenseCategories;
+  const DEFAULT_RECURRING_CATEGORIES = unitConfig.recurringCategories;
+
+  const isAdmin = profile?.role === "admin";
+  const canEdit = !!profile && profile.role !== "coach";
+
+  const handleLogout = () => { authLogout(); };
+
+  // ── Data keuangan unit yang sedang aktif ──
   const [loaded, setLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [initialBalances, setInitialBalances] = useState({ Cash: 0, BCA: 0, Mandiri: 0, BNI: 0 });
+  const [initialBalances, setInitialBalances] = useState(() => zeroBalances(METHODS));
   const [monthlyTarget, setMonthlyTarget] = useState(0);
   const [recurringCategories, setRecurringCategories] = useState(DEFAULT_RECURRING_CATEGORIES);
   const [reconciliations, setReconciliations] = useState([]);
@@ -315,7 +375,7 @@ export default function App() {
   const [selectedPiutang, setSelectedPiutang] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [actuals, setActuals] = useState({ Cash: "", BCA: "", Mandiri: "", BNI: "" });
+  const [actuals, setActuals] = useState(() => zeroActuals(METHODS));
   const [templates, setTemplates] = useState([]);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [prefillData, setPrefillData] = useState(null);
@@ -333,91 +393,316 @@ export default function App() {
   const [dateTo, setDateTo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Reset filter kantong & input aktual saat pindah unit (nama kantong bisa beda per unit)
+  useEffect(() => {
+    setFilterMethod("all");
+    setActuals(zeroActuals(METHODS));
+  }, [unitId]);
+
   const modalOpenRef = useRef(false);
   useEffect(() => {
-    modalOpenRef.current = showForm || showSettings || showReconModal || showLunasModal || showTemplateManager || !!confirmDelete;
-  }, [showForm, showSettings, showReconModal, confirmDelete]);
+    modalOpenRef.current = showForm || showSettings || showReconModal || showLunasModal || showTemplateManager || showUserManager || !!confirmDelete;
+  }, [showForm, showSettings, showReconModal, showLunasModal, showTemplateManager, showUserManager, confirmDelete]);
+
+  // Waktu penyimpanan lokal terakhir. Auto-refresh dijeda sebentar sesudah ada simpanan
+  // (mis. transaksi Kasir/Jadwal) supaya tulisan sempat sampai ke server sebelum dibaca
+  // ulang — mencegah data baru "hilang" ketimpa muat-ulang yang membaca data lama.
+  const lastWriteRef = useRef(0);
+  // Antrean tulis: semua penyimpanan dijalankan berurutan (satu selesai baru berikutnya),
+  // supaya beberapa perubahan cepat di perangkat yang sama tidak saling menimpa.
+  const writeQueueRef = useRef(Promise.resolve());
 
   const loadData = useCallback(async (isInitial) => {
+    if (!unitId) { if (isInitial) setLoaded(true); return; }
     if (!isInitial) setSyncing(true);
     try {
-      const res = await window.storage.get(STORAGE_KEY, true);
+      let res;
+      try {
+        res = await window.storage.get(storageKeyFor(unitId), true);
+      } catch (e) {
+        if (unitId === "mini-soccer") {
+          // Migrasi satu kali dari key lama (sebelum aplikasi mendukung multi-unit)
+          try {
+            const legacy = await window.storage.get(LEGACY_STORAGE_KEY, true);
+            await window.storage.set(storageKeyFor(unitId), legacy.value, true);
+            res = legacy;
+          } catch (e2) { /* memang belum ada data sama sekali */ }
+        }
+      }
       if (res && res.value) {
         const parsed = JSON.parse(res.value);
         setTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : []);
-        setInitialBalances(parsed.initialBalances || { Cash: 0, BCA: 0, Mandiri: 0, BNI: 0 });
+        setInitialBalances(parsed.initialBalances || zeroBalances(METHODS));
         setMonthlyTarget(typeof parsed.monthlyTarget === "number" ? parsed.monthlyTarget : 0);
         setRecurringCategories(Array.isArray(parsed.recurringCategories) ? parsed.recurringCategories : DEFAULT_RECURRING_CATEGORIES);
         setReconciliations(Array.isArray(parsed.reconciliations) ? parsed.reconciliations : []);
-        // Load templates dari shared storage terpisah
-        try {
-          const tplRes = await window.storage.get(TEMPLATES_KEY, true);
-          if (tplRes && tplRes.value) setTemplates(JSON.parse(tplRes.value));
-        } catch (e) { /* belum ada template */ }
+      } else {
+        setTransactions([]);
+        setInitialBalances(zeroBalances(METHODS));
+        setMonthlyTarget(0);
+        setRecurringCategories(DEFAULT_RECURRING_CATEGORIES);
+        setReconciliations([]);
       }
+      // Load templates dari shared storage terpisah
+      try {
+        let tplRes;
+        try {
+          tplRes = await window.storage.get(templatesKeyFor(unitId), true);
+        } catch (e) {
+          if (unitId === "mini-soccer") {
+            try {
+              const legacyTpl = await window.storage.get(LEGACY_TEMPLATES_KEY, true);
+              await window.storage.set(templatesKeyFor(unitId), legacyTpl.value, true);
+              tplRes = legacyTpl;
+            } catch (e2) { /* belum ada template lama */ }
+          }
+        }
+        setTemplates(tplRes && tplRes.value ? JSON.parse(tplRes.value) : []);
+      } catch (e) { /* belum ada template */ }
       setLastSynced(new Date());
       setErrorMsg("");
     } catch (e) {
       if (isInitial) {
         setTransactions([]);
-        setInitialBalances({ Cash: 0, BCA: 0, Mandiri: 0, BNI: 0 });
+        setInitialBalances(zeroBalances(METHODS));
       }
     } finally {
       if (isInitial) setLoaded(true);
       setSyncing(false);
     }
-  }, []);
+  }, [unitId]);
 
   useEffect(() => {
+    if (!unitId) return;
+    setLoaded(false);
     loadData(true);
     const interval = setInterval(() => {
-      if (!modalOpenRef.current) loadData(false);
+      // Jangan muat ulang kalau ada modal terbuka, atau baru saja ada penyimpanan lokal
+      // (beri jeda ~12 detik supaya tulisan sampai ke server dulu — cegah data baru
+      // ketimpa data lama, mis. transaksi Kasir yang belum sempat tersinkron).
+      if (!modalOpenRef.current && Date.now() - lastWriteRef.current > 12000) loadData(false);
     }, 25000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [loadData, unitId]);
 
   useEffect(() => {
     setSelectedMonth(null);
   }, [selectedYear]);
 
-  const persist = useCallback(async (data) => {
-    setSyncing(true);
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(data), true);
-      setLastSynced(new Date());
-      setErrorMsg("");
-    } catch (e) {
-      setErrorMsg("Gagal menyimpan data. Periksa koneksi lalu coba lagi.");
-    } finally {
-      setSyncing(false);
-    }
-  }, []);
+  // Penyimpanan aman-tabrakan (read-merge-write): sebelum menulis, BACA dulu data terbaru
+  // dari server, terapkan perubahan (transform) di atasnya, baru simpan. Jadi kalau orang
+  // lain menambah/mengubah transaksi lain hampir bersamaan, perubahannya tidak tertimpa.
+  // Semua penyimpanan diantre supaya berurutan (tidak balapan di perangkat yang sama).
+  const mergePersist = useCallback((transform) => {
+    const run = async () => {
+      if (!unitId) return;
+      lastWriteRef.current = Date.now();
+      setSyncing(true);
+      try {
+        let base = null;
+        try {
+          const res = await window.storage.get(storageKeyFor(unitId), true);
+          if (res?.value) base = JSON.parse(res.value);
+        } catch (e) { /* gagal baca (offline) — pakai state lokal sebagai dasar */ }
+        const safeBase = {
+          transactions: Array.isArray(base?.transactions) ? base.transactions : transactions,
+          initialBalances: base?.initialBalances || initialBalances,
+          reconciliations: Array.isArray(base?.reconciliations) ? base.reconciliations : reconciliations,
+          monthlyTarget: typeof base?.monthlyTarget === "number" ? base.monthlyTarget : monthlyTarget,
+          recurringCategories: Array.isArray(base?.recurringCategories) ? base.recurringCategories : recurringCategories,
+        };
+        const nextData = transform(safeBase);
+        await window.storage.set(storageKeyFor(unitId), JSON.stringify(nextData), true);
+        lastWriteRef.current = Date.now();
+        // Samakan state lokal dengan yang barusan ditulis (sudah termasuk perubahan orang lain).
+        setTransactions(nextData.transactions);
+        setInitialBalances(nextData.initialBalances);
+        setReconciliations(nextData.reconciliations);
+        setMonthlyTarget(nextData.monthlyTarget);
+        setRecurringCategories(nextData.recurringCategories);
+        setLastSynced(new Date());
+        setErrorMsg("");
+      } catch (e) {
+        setErrorMsg("Gagal menyimpan data. Periksa koneksi lalu coba lagi.");
+      } finally {
+        setSyncing(false);
+      }
+    };
+    writeQueueRef.current = writeQueueRef.current.then(run, run);
+    return writeQueueRef.current;
+  }, [unitId, transactions, initialBalances, reconciliations, monthlyTarget, recurringCategories]);
+
+  // Ubah daftar transaksi: update UI seketika (optimistik) lalu simpan aman-tabrakan.
+  // fn: (daftarTransaksi) => daftarTransaksiBaru — harus murni (buat objek tx baru di luar).
+  const commitTransactions = useCallback((fn) => {
+    setTransactions((prev) => fn(prev));
+    mergePersist((base) => ({ ...base, transactions: fn(base.transactions) }));
+  }, [mergePersist]);
+
+  // Jejak audit: catat siapa melakukan aksi apa & kapan (best-effort, tidak mengganggu
+  // operasi utama). Disimpan per unit, hanya 500 aktivitas terakhir yang dipertahankan.
+  const auditQueueRef = useRef(Promise.resolve());
+  const logAudit = useCallback((action, summary) => {
+    if (!unitId) return;
+    const entry = { id: uid(), ts: Date.now(), user: profile?.name || profile?.email || "?", action, summary };
+    const run = async () => {
+      try {
+        const res = await window.storage.get(auditKeyFor(unitId), true);
+        const parsed = res?.value ? JSON.parse(res.value) : null;
+        const list = Array.isArray(parsed?.entries) ? parsed.entries : [];
+        const next = [entry, ...list].slice(0, 500);
+        await window.storage.set(auditKeyFor(unitId), JSON.stringify({ entries: next }), true);
+      } catch (e) { /* audit best-effort — jangan ganggu alur utama */ }
+    };
+    auditQueueRef.current = auditQueueRef.current.then(run, run);
+  }, [unitId, profile]);
 
   const handleSaveTransaction = (tx) => {
-    setTransactions((prev) => {
-      const exists = prev.some((t) => t.id === tx.id);
-      const next = exists ? prev.map((t) => (t.id === tx.id ? tx : t)) : [...prev, tx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const exists = transactions.some((t) => t.id === tx.id);
+    commitTransactions((txs) =>
+      txs.some((t) => t.id === tx.id) ? txs.map((t) => (t.id === tx.id ? tx : t)) : [...txs, tx]
+    );
+    logAudit(exists ? "ubah" : "tambah", `Transaksi ${tx.type}${tx.category ? " · " + tx.category : ""} · ${formatRupiah(tx.amount)}`);
     setShowForm(false);
     setEditingTx(null);
   };
 
+  // Dipakai modul Membership & Booking untuk otomatis mencatat pembayaran sebagai
+  // transaksi income, tanpa admin harus input manual dua kali.
+  // bookingId (opsional): mengikat transaksi ini ke satu booking di Jadwal, supaya
+  // menghapus salah satu otomatis menghapus pasangannya (sinkron antar-tab).
+  const handleRecordPayment = ({ amount, category, method, date, entity, note, duration, status, bookingId }) => {
+    const tx = {
+      id: uid(),
+      type: "income",
+      date,
+      amount,
+      category,
+      entity,
+      method,
+      status: status || "Lunas",
+      note,
+      duration,
+      ...(bookingId ? { bookingId } : {}),
+      recordedBy: profile?.name || "",
+    };
+    commitTransactions((txs) => [...txs, tx]);
+    logAudit("tambah", `Pembayaran · ${category} · ${formatRupiah(amount)}${status && status !== "Lunas" ? " (" + status + ")" : ""}`);
+  };
+
+  // Dipakai modul Kasir: satu struk berisi beberapa item, semua tercatat sekaligus
+  // sebagai transaksi income terpisah per item (supaya laporan per kategori tetap
+  // akurat) dengan receiptId yang sama sebagai pengikat satu pembayaran.
+  const handleRecordReceipt = (entries) => {
+    const txs = entries.map((en) => ({
+      id: uid(),
+      type: "income",
+      date: en.date,
+      amount: en.amount,
+      category: en.category,
+      entity: en.entity || "",
+      method: en.method,
+      status: en.status || "Lunas",
+      note: en.note,
+      ...(en.duration ? { duration: en.duration } : {}),
+      ...(en.bookingId ? { bookingId: en.bookingId } : {}),
+      receiptId: en.receiptId,
+      recordedBy: profile?.name || "",
+    }));
+    commitTransactions((prev) => [...prev, ...txs]);
+    const total = entries.reduce((s, en) => s + (en.amount || 0), 0);
+    logAudit("tambah", `Penjualan Kasir · ${entries.length} item · ${formatRupiah(total)}`);
+  };
+
+  // Dipakai modul Stok Barang untuk otomatis mencatat pembelian stok sebagai transaksi
+  // expense, tanpa admin harus input manual dua kali.
+  const handleRecordExpense = ({ amount, category, method, date, note }) => {
+    const tx = {
+      id: uid(),
+      type: "expense",
+      date,
+      amount,
+      category,
+      method,
+      note,
+      recordedBy: profile?.name || "",
+    };
+    commitTransactions((txs) => [...txs, tx]);
+    logAudit("tambah", `Pengeluaran · ${category} · ${formatRupiah(amount)}`);
+  };
+
+  // Hapus satu booking di storage Jadwal berdasarkan id (dipakai saat transaksi terkait
+  // dihapus di tab Transaksi — pasangannya di Jadwal ikut terhapus supaya sinkron).
+  const deleteBookingFromStorage = async (bookingId) => {
+    try {
+      const res = await window.storage.get(bookingKeyFor(unitId), true);
+      const parsed = res?.value ? JSON.parse(res.value) : null;
+      const list = Array.isArray(parsed?.bookings) ? parsed.bookings : [];
+      const next = list.filter((b) => b.id !== bookingId);
+      if (next.length !== list.length) {
+        await window.storage.set(bookingKeyFor(unitId), JSON.stringify({ bookings: next }), true);
+      }
+    } catch (e) { /* diamkan — akan tersinkron saat Jadwal dimuat ulang */ }
+  };
+
+  // Dipanggil modul Jadwal saat sebuah booking dihapus: transaksi income yang terikat
+  // ke booking itu (bookingId sama) ikut dihapus dari Keuangan, jadi tidak perlu hapus
+  // dua kali dan tidak ada transaksi "yatim".
+  const handleBookingDeleted = (bookingId) => {
+    if (!bookingId) return;
+    commitTransactions((txs) => txs.filter((t) => t.bookingId !== bookingId));
+    logAudit("hapus", "Booking dihapus (beserta transaksi terkait)");
+  };
+
+  // Total nominal transaksi yang sudah tercatat per booking (untuk hitung sisa pelunasan).
+  const paidByBooking = useMemo(() => {
+    const m = {};
+    transactions.forEach((t) => {
+      if (t.bookingId && (t.type === "income")) m[t.bookingId] = (m[t.bookingId] || 0) + t.amount;
+    });
+    return m;
+  }, [transactions]);
+
+  // Pelunasan DP: tandai transaksi lama (ber-bookingId) jadi Lunas, dan kalau ada sisa
+  // yang dibayar sekarang, catat sebagai transaksi income baru (Lunas) — tanpa membuat
+  // slot jadwal baru, jadi tidak bentrok. Dipakai modul Jadwal.
+  const handleSettleBooking = ({ bookingId, settlementAmount, method, date, category, entity }) => {
+    const settlementTx = Number(settlementAmount) > 0 ? {
+      id: uid(),
+      type: "income",
+      date,
+      amount: Number(settlementAmount),
+      category,
+      entity: entity || "",
+      method,
+      status: "Lunas",
+      note: "Pelunasan DP",
+      bookingId,
+      recordedBy: profile?.name || "",
+    } : null;
+    commitTransactions((txs) => {
+      let next = txs.map((t) =>
+        t.bookingId === bookingId && t.status && t.status !== "Lunas" ? { ...t, status: "Lunas" } : t
+      );
+      if (settlementTx) next = [...next, settlementTx];
+      return next;
+    });
+    logAudit("pelunasan", `Pelunasan DP · ${formatRupiah(Number(settlementAmount) || 0)}`);
+  };
+
   const handleConfirmDelete = () => {
     if (!confirmDelete) return;
+    const delId = confirmDelete.id;
     if (confirmDelete.type === "transaction") {
-      setTransactions((prev) => {
-        const next = prev.filter((t) => t.id !== confirmDelete.id);
-        persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-        return next;
-      });
+      // Kalau transaksi ini terikat ke booking di Jadwal, hapus juga booking-nya (sinkron).
+      const tx = transactions.find((t) => t.id === delId);
+      if (tx?.bookingId) deleteBookingFromStorage(tx.bookingId);
+      commitTransactions((txs) => txs.filter((t) => t.id !== delId));
+      logAudit("hapus", `Transaksi ${tx?.category || tx?.type || ""} · ${formatRupiah(tx?.amount || 0)}`);
     } else if (confirmDelete.type === "reconciliation") {
-      setReconciliations((prev) => {
-        const next = prev.filter((r) => r.id !== confirmDelete.id);
-        persist({ transactions, initialBalances, reconciliations: next, monthlyTarget, recurringCategories });
-        return next;
-      });
+      setReconciliations((prev) => prev.filter((r) => r.id !== delId));
+      mergePersist((base) => ({ ...base, reconciliations: base.reconciliations.filter((r) => r.id !== delId) }));
+      logAudit("hapus", "Catatan rekonsiliasi (cek saldo)");
     }
     setConfirmDelete(null);
   };
@@ -426,19 +711,18 @@ export default function App() {
     setInitialBalances(nextBalances);
     setMonthlyTarget(nextTarget);
     setRecurringCategories(nextRecurring);
-    persist({ transactions, initialBalances: nextBalances, reconciliations, monthlyTarget: nextTarget, recurringCategories: nextRecurring });
+    mergePersist((base) => ({ ...base, initialBalances: nextBalances, monthlyTarget: nextTarget, recurringCategories: nextRecurring }));
+    logAudit("ubah", "Pengaturan (saldo awal / target / kategori rutin)");
     setShowSettings(false);
   };
 
   const handleSaveReconciliation = (entry) => {
-    setReconciliations((prev) => {
-      const next = [...prev, entry];
-      persist({ transactions, initialBalances, reconciliations: next, monthlyTarget, recurringCategories });
-      return next;
-    });
+    setReconciliations((prev) => [...prev, entry]);
+    mergePersist((base) => ({ ...base, reconciliations: [...base.reconciliations, entry] }));
+    logAudit("tambah", `Cek saldo${Math.round(entry.totalDiff) !== 0 ? " (selisih " + formatRupiah(entry.totalDiff) + ")" : " (cocok)"}`);
     // Auto-trigger analisa jika ada selisih
     if (Math.round(entry.totalDiff) !== 0) {
-      const analysis = analyzeReconciliation(entry, transactions);
+      const analysis = analyzeReconciliation(entry, transactions, METHODS);
       setReconAnalysis({ recon: entry, results: analysis, timestamp: Date.now() });
       setActiveTab("ceksaldo");
     }
@@ -446,36 +730,33 @@ export default function App() {
   };
 
   const handleTandaiLunas = (piutang, pelunasanData) => {
-    setTransactions((prev) => {
-      const pelunasanId = uid();
-      const pelunasanTx = {
-        id: pelunasanId,
-        type: "income",
-        date: pelunasanData.date,
-        amount: piutang.sisa,
-        category: piutang.category,
-        entity: piutang.entity || "",
-        status: "Lunas",
-        note: "Pelunasan otomatis dari panel Piutang Aktif",
-        recordedBy: pelunasanData.recordedBy || "",
-        ...(pelunasanData.splitMode
-          ? { splits: pelunasanData.splits }
-          : { method: pelunasanData.method }),
-      };
-      const updated = prev.map((t) =>
-        t.id === piutang.id ? { ...t, status: "Lunas" } : t
-      );
-      const next = [...updated, pelunasanTx];
-      persist({ transactions: next, initialBalances, reconciliations, monthlyTarget, recurringCategories });
-      return next;
-    });
+    const pelunasanTx = {
+      id: uid(),
+      type: "income",
+      date: pelunasanData.date,
+      amount: piutang.sisa,
+      category: piutang.category,
+      entity: piutang.entity || "",
+      status: "Lunas",
+      note: "Pelunasan otomatis dari panel Piutang Aktif",
+      recordedBy: pelunasanData.recordedBy || "",
+      ...(pelunasanData.splitMode
+        ? { splits: pelunasanData.splits }
+        : { method: pelunasanData.method }),
+    };
+    commitTransactions((txs) => [
+      ...txs.map((t) => (t.id === piutang.id ? { ...t, status: "Lunas" } : t)),
+      pelunasanTx,
+    ]);
+    logAudit("pelunasan", `Pelunasan piutang · ${formatRupiah(piutang.sisa)}`);
     setShowLunasModal(false);
     setSelectedPiutang(null);
   };
 
   const persistTemplates = async (nextTemplates) => {
+    if (!unitId) return;
     try {
-      await window.storage.set(TEMPLATES_KEY, JSON.stringify(nextTemplates), true);
+      await window.storage.set(templatesKeyFor(unitId), JSON.stringify(nextTemplates), true);
       setTemplates(nextTemplates);
     } catch (e) {
       setErrorMsg("Gagal menyimpan template.");
@@ -582,13 +863,76 @@ export default function App() {
         }))
       : [{ Catatan: "Tidak ada piutang non-bisnis" }];
 
+    const taxRows = [
+      ...taxMonthlyData.map((r) => ({
+        Bulan: r.label,
+        Omzet: r.omzet,
+        "PPh Final 0,5%": Math.round(r.pphFinal),
+        "Income Rental": r.rentalIncome,
+        "Pajak Daerah 10%": Math.round(r.pajakDaerah),
+      })),
+      {
+        Bulan: "TOTAL",
+        Omzet: yearTotals.income,
+        "PPh Final 0,5%": Math.round(yearTotals.income * 0.005),
+        "Income Rental": taxMonthlyData.reduce((s, r) => s + r.rentalIncome, 0),
+        "Pajak Daerah 10%": Math.round(taxMonthlyData.reduce((s, r) => s + r.pajakDaerah, 0)),
+      },
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txRows), "Transaksi");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pajakRows), "Pajak Masuk");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(piutangRows), "Piutang Non-Bisnis");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reconRows), "Rekonsiliasi");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), `Ringkasan ${selectedYear}`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(taxRows), `Pajak Siap Lapor ${selectedYear}`);
     XLSX.writeFile(wb, `V3BKS-Rekap-Saldo-${todayISO()}.xlsx`);
+  };
+
+  // Cadangan data mentah (bukan rekap seperti handleExport) — untuk pemulihan data kalau
+  // dibutuhkan, mencakup semua modul yang aktif di unit ini (Keuangan + Membership/Payroll/
+  // Booking/Stok sesuai flag unit). Diunduh sebagai satu file JSON.
+  const [backingUp, setBackingUp] = useState(false);
+  const handleBackupData = async () => {
+    setBackingUp(true);
+    try {
+      const backup = {
+        unit: unitId,
+        exportedAt: new Date().toISOString(),
+        finance: { transactions, initialBalances, reconciliations, monthlyTarget, recurringCategories },
+        templates,
+      };
+      if (unitConfig.hasMembership) {
+        const res = await window.storage.get(membershipKeyFor(unitId), true);
+        backup.membership = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasPayroll) {
+        const res = await window.storage.get(payrollKeyFor(unitId), true);
+        backup.payroll = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasBooking) {
+        const res = await window.storage.get(bookingKeyFor(unitId), true);
+        backup.bookings = res?.value ? JSON.parse(res.value) : null;
+      }
+      if (unitConfig.hasInventory) {
+        const res = await window.storage.get(inventoryKeyFor(unitId), true);
+        backup.inventory = res?.value ? JSON.parse(res.value) : null;
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `V3BKS-Backup-${unitId}-${todayISO()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Gagal membuat cadangan data: " + (err?.message || "Terjadi kesalahan."));
+    } finally {
+      setBackingUp(false);
+    }
   };
 
   const years = useMemo(() => {
@@ -596,6 +940,19 @@ export default function App() {
     set.add(new Date().getFullYear());
     return Array.from(set).sort((a, b) => b - a);
   }, [transactions]);
+
+  // Papan skor bulanan di tab Laporan otomatis di-scroll ke bulan berjalan supaya
+  // bulan yang paling relevan langsung terlihat tanpa geser manual.
+  const scoreboardRef = useRef(null);
+  useEffect(() => {
+    if (activeTab !== "laporan" || !scoreboardRef.current) return;
+    const now = new Date();
+    if (selectedYear !== now.getFullYear()) return;
+    const btn = scoreboardRef.current.children[now.getMonth()];
+    if (btn) {
+      scoreboardRef.current.scrollLeft = Math.max(0, btn.offsetLeft - scoreboardRef.current.clientWidth / 2 + btn.clientWidth / 2);
+    }
+  }, [activeTab, selectedYear]);
 
   const dashboardAsOfDate = useMemo(() => {
     const now = new Date();
@@ -682,6 +1039,25 @@ export default function App() {
     [monthlyData]
   );
 
+  // Rekap pajak per bulan untuk tahun terpilih — dasar Laporan Pajak Siap Lapor.
+  // PPh Final 0,5% (PP 23/2018) dari total omzet, Pajak Daerah 10% dari income kategori Rental.
+  const taxMonthlyData = useMemo(() => {
+    const rows = MONTHS.map((label, idx) => ({ idx, label, omzet: 0, rentalIncome: 0 }));
+    transactions.forEach((t) => {
+      if (t.type !== "income") return;
+      const d = new Date(t.date);
+      if (d.getFullYear() !== selectedYear) return;
+      const m = d.getMonth();
+      rows[m].omzet += t.amount;
+      if ((t.category || "").toLowerCase().startsWith("rental")) rows[m].rentalIncome += t.amount;
+    });
+    return rows.map((r) => ({
+      ...r,
+      pphFinal: r.omzet * 0.005,
+      pajakDaerah: r.rentalIncome * 0.1,
+    }));
+  }, [transactions, selectedYear]);
+
   const maxAbsProfit = useMemo(
     () => Math.max(1, ...monthlyData.map((r) => Math.abs(r.profit))),
     [monthlyData]
@@ -735,7 +1111,7 @@ export default function App() {
   const periodRentalIncome = useMemo(
     () =>
       periodTransactions
-        .filter((t) => t.type === "income" && t.category === "Rental")
+        .filter((t) => t.type === "income" && (t.category || "").toLowerCase().startsWith("rental"))
         .reduce((sum, t) => sum + t.amount, 0),
     [periodTransactions]
   );
@@ -823,11 +1199,14 @@ export default function App() {
   );
 
   const anomalies = useMemo(
-    () => detectAnomalies(transactions, currentBalancesRealtime),
-    [transactions, currentBalancesRealtime]
+    () => detectAnomalies(transactions, currentBalancesRealtime, METHODS),
+    [transactions, currentBalancesRealtime, METHODS]
   );
 
   const breakEvenData = useMemo(() => {
+    const BREAKEVEN = unitConfig.breakeven;
+    if (!BREAKEVEN) return null;
+    const rentalCategory = unitConfig.rentalCategoryForTax || "Rental";
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -838,7 +1217,7 @@ export default function App() {
     const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
 
     const rentalTxs = transactions.filter(
-      (t) => t.type === "income" && t.category === "Rental" && t.date.startsWith(monthStr)
+      (t) => t.type === "income" && t.category === rentalCategory && t.date.startsWith(monthStr)
     );
     const rentalIncome = rentalTxs.reduce((sum, t) => sum + t.amount, 0);
     const hoursBooked = rentalTxs
@@ -877,8 +1256,9 @@ export default function App() {
       gapBreakEven, gapHealthy,
       hoursToBreakEven, hoursToBreakEvenWD, hoursToBreakEvenWE,
       utilizationPct, progressToBreakEven, progressToStrong,
+      breakevenConfig: BREAKEVEN,
     };
-  }, [transactions]);
+  }, [transactions, unitConfig]);
 
   const todaySummary = useMemo(() => {
     const todayTxs = transactions
@@ -979,10 +1359,49 @@ export default function App() {
     setSearchTerm("");
   };
 
+  if (authUser === undefined || (authUser && profileLoading)) {
+    return (
+      <div className="v3-root" style={{ minHeight: "100vh" }}>
+        <style>{CSS}</style>
+        <div className="flex items-center justify-center" style={{ height: "100vh" }}>
+          <Loader2 className="v3-gold animate-spin" size={28} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div className="v3-root" style={{ minHeight: "100vh" }}>
+        <style>{CSS}</style>
+        <Login />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="v3-root" style={{ minHeight: "100vh" }}>
+        <style>{CSS}</style>
+        <div className="flex items-center justify-center" style={{ height: "100vh", padding: "1.5rem" }}>
+          <div className="v3-surface flex flex-col items-center text-center" style={{ borderRadius: 18, padding: "2rem 1.5rem", maxWidth: 360 }}>
+            <p className="v3-display" style={{ fontWeight: 700, marginBottom: "0.5rem" }}>Belum ada akses</p>
+            <p className="v3-muted" style={{ fontSize: "0.85rem", marginBottom: "1.2rem" }}>
+              Akun Anda sudah login tapi belum diberi akses ke unit manapun. Minta Admin untuk menambahkan Anda lewat menu Kelola Pengguna.
+            </p>
+            <button onClick={handleLogout} className="v3-surface-alt flex items-center gap-1.5" style={{ borderRadius: 999, padding: "0.5rem 1.1rem", fontSize: "0.82rem", fontWeight: 600 }}>
+              <LogOut size={14} /> Keluar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!loaded) {
     return (
       <div className="v3-root" style={{ minHeight: "100vh" }}>
-        <style>{FONT_IMPORTS}</style>
+        <style>{CSS}</style>
         <div className="flex items-center justify-center" style={{ height: "100vh" }}>
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="v3-gold animate-spin" size={28} />
@@ -993,29 +1412,78 @@ export default function App() {
     );
   }
 
+  if (showConsolidated) {
+    return (
+      <div className="v3-root" style={{ minHeight: "100vh" }}>
+        <style>{CSS}</style>
+        <ConsolidatedDashboard
+          accessibleUnits={accessibleUnits}
+          onOpenUnit={(id) => { setUnitId(id); setShowConsolidated(false); }}
+          onBack={() => setShowConsolidated(false)}
+          onLogout={handleLogout}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="v3-root" style={{ minHeight: "100vh", paddingBottom: "6rem" }}>
+    <UnitConfigProvider value={unitConfig}>
+    <div className="v3-root" style={{ minHeight: "100vh", paddingBottom: "7.5rem" }}>
       <style>{CSS}</style>
 
       {/* Header */}
       <div className="v3-surface" style={{ position: "sticky", top: 0, zIndex: 30, borderBottom: "1px solid rgba(201,162,39,0.18)" }}>
-        <div className="flex items-center justify-between px-4 py-3 md:px-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="v3-display v3-gold" style={{ fontSize: "1.35rem", fontWeight: 700, letterSpacing: "0.04em" }}>V3BKS</p>
-              {anomalies.filter((a) => !dismissedAnomalies.has(a.id)).length > 0 && (
-                <button
-                  onClick={() => setActiveTab("dashboard")}
-                  style={{ background: "#D1574A", color: "#fff", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, padding: "0.1rem 0.45rem", border: "none", cursor: "pointer" }}
-                  title="Ada peringatan — klik untuk lihat"
-                >
-                  {anomalies.filter((a) => !dismissedAnomalies.has(a.id)).length}
-                </button>
-              )}
-            </div>
-            <p className="v3-muted" style={{ fontSize: "0.7rem", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: "-2px" }}>
-              Rekap Saldo Real
-            </p>
+        <div className="flex items-center justify-between px-4 py-3 md:px-6" style={{ gap: "0.6rem", flexWrap: "wrap" }}>
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowUnitMenu((v) => !v)}
+              className="flex items-center gap-1.5"
+              style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="v3-display v3-gold" style={{ fontSize: "1.1rem", fontWeight: 700, letterSpacing: "0.02em" }}>{unitConfig.shortName}</p>
+                  <ChevronDown size={14} className="v3-muted" />
+                  {anomalies.filter((a) => !dismissedAnomalies.has(a.id)).length > 0 && (
+                    <span
+                      style={{ background: "#D1574A", color: "#fff", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, padding: "0.1rem 0.45rem" }}
+                      title="Ada peringatan — klik untuk lihat"
+                    >
+                      {anomalies.filter((a) => !dismissedAnomalies.has(a.id)).length}
+                    </span>
+                  )}
+                </div>
+                <p className="v3-muted" style={{ fontSize: "0.68rem", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: "-2px", textAlign: "left" }}>
+                  V3BKS · {profile.name || profile.email}
+                </p>
+              </div>
+            </button>
+            {showUnitMenu && (
+              <>
+                <div onClick={() => setShowUnitMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
+                <div className="v3-surface" style={{ position: "absolute", top: "110%", left: 0, zIndex: 40, borderRadius: 14, minWidth: 240, border: "1px solid rgba(201,162,39,0.2)", overflow: "hidden" }}>
+                  {accessibleUnits.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => { setUnitId(u.id); setShowUnitMenu(false); }}
+                      className={u.id === unitId ? "v3-gold-bg" : ""}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "0.65rem 0.9rem", fontSize: "0.82rem", fontWeight: 600, background: u.id === unitId ? undefined : "transparent", border: "none", cursor: "pointer" }}
+                    >
+                      {u.name}
+                    </button>
+                  ))}
+                  {accessibleUnits.length > 1 && (
+                    <button
+                      onClick={() => { setShowUnitMenu(false); setShowConsolidated(true); }}
+                      className="flex items-center gap-1.5 v3-muted"
+                      style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.65rem 0.9rem", fontSize: "0.8rem", fontWeight: 600, background: "rgba(255,255,255,0.03)", border: "none", borderTop: "1px solid rgba(201,162,39,0.15)", cursor: "pointer" }}
+                    >
+                      <Building2 size={14} /> Ringkasan Semua Unit
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1036,22 +1504,84 @@ export default function App() {
             >
               <Download className="v3-muted" size={16} />
             </button>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="v3-surface-alt flex items-center justify-center"
-              style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
-              aria-label="Pengaturan"
-              title="Pengaturan"
-            >
-              <Settings className="v3-muted" size={16} />
-            </button>
-            <button
-              onClick={() => { setEditingTx(null); setShowForm(true); }}
-              className="v3-gold-bg hidden md:flex items-center gap-1.5"
-              style={{ borderRadius: 999, padding: "0.55rem 1rem", fontWeight: 600, fontSize: "0.85rem" }}
-            >
-              <Plus size={16} /> Tambah Transaksi
-            </button>
+            {/* Aksi sekunder dikumpulkan di satu menu ⋮ supaya header tetap satu baris di HP */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowMoreMenu((v) => !v)}
+                className="v3-surface-alt flex items-center justify-center"
+                style={{ width: 36, height: 36, borderRadius: 999, border: "1px solid rgba(201,162,39,0.2)" }}
+                aria-label="Menu lainnya"
+                title="Menu lainnya"
+              >
+                <MoreVertical className="v3-muted" size={16} />
+              </button>
+              {showMoreMenu && (
+                <>
+                  <div onClick={() => setShowMoreMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
+                  <div className="v3-surface" style={{ position: "absolute", top: "115%", right: 0, zIndex: 40, borderRadius: 14, minWidth: 210, border: "1px solid rgba(201,162,39,0.2)", overflow: "hidden" }}>
+                    {canEdit && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); handleBackupData(); }}
+                        disabled={backingUp}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        {backingUp ? <Loader2 size={15} className="v3-muted" style={{ animation: "spin 0.8s linear infinite" }} /> : <DatabaseBackup size={15} className="v3-muted" />}
+                        Cadangkan Data
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowSettings(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <Settings size={15} className="v3-muted" /> Pengaturan
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowUserManager(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <Users size={15} className="v3-muted" /> Kelola Pengguna
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setShowMoreMenu(false); setShowAudit(true); }}
+                        className="flex items-center gap-2"
+                        style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        <FileText size={15} className="v3-muted" /> Riwayat Aktivitas
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowMoreMenu(false); handleLogout(); }}
+                      className="flex items-center gap-2"
+                      style={{ display: "flex", width: "100%", textAlign: "left", padding: "0.7rem 0.95rem", fontSize: "0.82rem", fontWeight: 600, background: "transparent", border: "none", borderTop: "1px solid rgba(201,162,39,0.15)", cursor: "pointer", color: "#D1574A" }}
+                    >
+                      <LogOut size={15} /> Keluar
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            {canEdit && (
+              <button
+                onClick={() => { setEditingTx(null); setShowForm(true); }}
+                className="v3-gold-bg hidden md:flex items-center gap-1.5"
+                style={{ borderRadius: 999, padding: "0.55rem 1rem", fontWeight: 600, fontSize: "0.85rem" }}
+              >
+                <Plus size={16} /> Tambah Transaksi
+              </button>
+            )}
+            {!canEdit && (
+              <span className="v3-surface-alt flex items-center gap-1.5 v3-muted" style={{ borderRadius: 999, padding: "0.5rem 0.9rem", fontSize: "0.75rem", fontWeight: 600 }}>
+                <Eye size={13} /> Lihat saja
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1067,22 +1597,26 @@ export default function App() {
           <>
         {/* Quick Actions */}
         <div className="flex gap-2" style={{ marginBottom: "1.2rem" }}>
-          <button
-            onClick={() => openWithPrefill({ type: "transfer", fromMethod: "Cash" })}
-            className="v3-surface flex items-center gap-2"
-            style={{ flex: 1, borderRadius: 14, padding: "0.8rem 1rem", border: "1.5px solid rgba(201,162,39,0.25)" }}
-          >
-            <Zap size={16} className="v3-gold" />
-            <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>Setor Tunai</span>
-          </button>
-          <button
-            onClick={() => setShowTemplateManager(true)}
-            className="v3-surface flex items-center gap-2"
-            style={{ flex: 1, borderRadius: 14, padding: "0.8rem 1rem", border: "1.5px solid rgba(201,162,39,0.25)" }}
-          >
-            <FileText size={16} className="v3-gold" />
-            <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>Template</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => openWithPrefill({ type: "transfer", fromMethod: "Cash" })}
+              className="v3-surface flex items-center gap-2"
+              style={{ flex: 1, borderRadius: 14, padding: "0.8rem 1rem", border: "1.5px solid rgba(201,162,39,0.25)" }}
+            >
+              <Zap size={16} className="v3-gold" />
+              <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>Setor Tunai</span>
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={() => setShowTemplateManager(true)}
+              className="v3-surface flex items-center gap-2"
+              style={{ flex: 1, borderRadius: 14, padding: "0.8rem 1rem", border: "1.5px solid rgba(201,162,39,0.25)" }}
+            >
+              <FileText size={16} className="v3-gold" />
+              <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>Template</span>
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("laporan")}
             className="v3-surface flex items-center gap-2"
@@ -1094,7 +1628,7 @@ export default function App() {
         </div>
 
         {/* Break-Even Tracker */}
-        <BreakEvenCard data={breakEvenData} />
+        {breakEvenData && <BreakEvenCard data={breakEvenData} />}
 
         {/* Panel Anomali */}
         {anomalies.filter((a) => !dismissedAnomalies.has(a.id)).length > 0 && (
@@ -1216,13 +1750,15 @@ export default function App() {
           {todaySummary.txs.length === 0 ? (
             <div style={{ textAlign: "center", padding: "1rem 0" }}>
               <p className="v3-muted" style={{ fontSize: "0.82rem" }}>Belum ada transaksi hari ini.</p>
-              <button
-                onClick={() => { setEditingTx(null); setShowForm(true); }}
-                className="v3-gold-bg"
-                style={{ marginTop: "0.75rem", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.82rem", fontWeight: 700 }}
-              >
-                + Catat Transaksi
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => { setEditingTx(null); setShowForm(true); }}
+                  className="v3-gold-bg"
+                  style={{ marginTop: "0.75rem", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.82rem", fontWeight: 700 }}
+                >
+                  + Catat Transaksi
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -1306,7 +1842,7 @@ export default function App() {
           </select>
         </div>
 
-        <div className="v3-scroll flex gap-2" style={{ overflowX: "auto", paddingBottom: "0.5rem", marginBottom: "1.4rem" }}>
+        <div ref={scoreboardRef} className="v3-scroll flex gap-2" style={{ overflowX: "auto", paddingBottom: "0.5rem", marginBottom: "1.4rem" }}>
           {monthlyData.map((r) => {
             const isSelected = selectedMonth === r.idx;
             const barPct = Math.min(100, (Math.abs(r.profit) / maxAbsProfit) * 100);
@@ -1331,7 +1867,7 @@ export default function App() {
                 </p>
                 <p className="v3-mono v3-green" style={{ fontSize: "0.68rem", marginTop: "0.3rem" }}>
                   +{formatRupiah(r.income)}
-                  {r.targetPct !== null && (
+                  {r.targetPct !== null && r.income > 0 && (
                     <span style={{ color: r.targetPct >= 100 ? "#4CAF61" : r.targetPct >= 70 ? "#C9A227" : "#D1574A" }}>
                       {" "}({r.targetPct}%)
                     </span>
@@ -1393,24 +1929,25 @@ export default function App() {
         )}
 
         {/* Chart */}
-        <div className="v3-surface" style={{ borderRadius: 16, padding: "1rem 0.6rem 0.6rem 0", marginBottom: "1.4rem" }}>
-          <p className="v3-muted" style={{ fontSize: "0.78rem", padding: "0 1rem", marginBottom: "0.4rem" }}>
-            Tren Income vs Expense — {selectedYear}
+        <div className="v3-surface" style={{ borderRadius: 16, padding: "1.1rem 0.6rem 0.6rem 0", marginBottom: "1.4rem" }}>
+          <p style={{ fontSize: "0.68rem", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700, color: "#8A9099", padding: "0 1.1rem", marginBottom: "0.6rem" }}>
+            Tren Income vs Expense · {selectedYear}
           </p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={monthlyData} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis dataKey="label" stroke="#8A9099" fontSize={11} tickLine={false} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} />
               <YAxis stroke="#8A9099" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => (v === 0 ? "0" : (v / 1000000).toFixed(1) + "jt")} width={42} />
               <Tooltip
+                cursor={{ fill: "rgba(201,162,39,0.08)" }}
                 formatter={(value, name) => [formatRupiah(value), name]}
-                labelStyle={{ color: "#0B0D10" }}
-                contentStyle={{ background: "#F2EFE9", border: "none", borderRadius: 8, fontSize: "0.78rem" }}
+                labelStyle={{ color: "#0B0D10", fontWeight: 700 }}
+                contentStyle={{ background: "#F2EFE9", border: "none", borderRadius: 10, fontSize: "0.78rem", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}
               />
               <Legend wrapperStyle={{ fontSize: "0.72rem", color: "#8A9099" }} />
-              <Bar dataKey="income" name="Income" fill="#4CAF61" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="expense" name="Expense" fill="#D1574A" radius={[3, 3, 0, 0]} />
-              <Line dataKey="profit" name="Profit" stroke="#C9A227" strokeWidth={2} dot={{ r: 3, fill: "#C9A227" }} />
+              <Bar dataKey="income" name="Income" fill="#4CAF61" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              <Bar dataKey="expense" name="Expense" fill="#D1574A" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              <Line dataKey="profit" name="Profit" stroke="#C9A227" strokeWidth={2.2} dot={{ r: 2.5, fill: "#C9A227" }} activeDot={{ r: 5, fill: "#E4C24A", stroke: "#0B0D10", strokeWidth: 1.5 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -1633,13 +2170,15 @@ export default function App() {
               })}
             </div>
           )}
-          <button
-            onClick={() => openWithPrefill({ type: "piutang_keluar" })}
-            className="v3-surface-alt flex items-center justify-center gap-2"
-            style={{ borderRadius: 12, padding: "0.65rem 0", fontWeight: 600, fontSize: "0.82rem", width: "100%", marginTop: "0.9rem" }}
-          >
-            <Plus size={14} /> Catat Piutang Baru
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => openWithPrefill({ type: "piutang_keluar" })}
+              className="v3-surface-alt flex items-center justify-center gap-2"
+              style={{ borderRadius: 12, padding: "0.65rem 0", fontWeight: 600, fontSize: "0.82rem", width: "100%", marginTop: "0.9rem" }}
+            >
+              <Plus size={14} /> Catat Piutang Baru
+            </button>
+          )}
         </div>
 
         {/* ─── Rekonsiliasi Kas ─── */}
@@ -1648,13 +2187,15 @@ export default function App() {
             <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700, letterSpacing: "0.02em" }}>
               Rekonsiliasi Kas Harian
             </p>
-            <button
-              onClick={() => setShowReconModal(true)}
-              className="v3-surface-alt flex items-center gap-1.5"
-              style={{ borderRadius: 999, padding: "0.45rem 0.9rem", fontSize: "0.78rem", fontWeight: 600 }}
-            >
-              <ClipboardCheck size={14} /> Cek Kas
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setShowReconModal(true)}
+                className="v3-surface-alt flex items-center gap-1.5"
+                style={{ borderRadius: 999, padding: "0.45rem 0.9rem", fontSize: "0.78rem", fontWeight: 600 }}
+              >
+                <ClipboardCheck size={14} /> Cek Kas
+              </button>
+            )}
           </div>
 
           {todayRecon ? (
@@ -1850,13 +2391,15 @@ export default function App() {
               <p className="v3-muted" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>
                 Catat transaksi pertama untuk periode ini.
               </p>
-              <button
-                onClick={() => { setEditingTx(null); setShowForm(true); }}
-                className="v3-gold-bg flex items-center gap-1.5"
-                style={{ borderRadius: 999, padding: "0.55rem 1.1rem", fontWeight: 600, fontSize: "0.85rem" }}
-              >
-                <Plus size={16} /> Tambah Transaksi
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => { setEditingTx(null); setShowForm(true); }}
+                  className="v3-gold-bg flex items-center gap-1.5"
+                  style={{ borderRadius: 999, padding: "0.55rem 1.1rem", fontWeight: 600, fontSize: "0.85rem" }}
+                >
+                  <Plus size={16} /> Tambah Transaksi
+                </button>
+              )}
             </div>
           )}
 
@@ -1865,6 +2408,7 @@ export default function App() {
               key={t.id}
               tx={t}
               highlighted={t.id === highlightedTxId}
+              canEdit={canEdit}
               onEdit={() => { setEditingTx(t); setShowForm(true); }}
               onDelete={() => setConfirmDelete({ type: "transaction", id: t.id })}
             />
@@ -1892,50 +2436,125 @@ export default function App() {
           />
         )}
 
+        {activeTab === "kasir" && unitConfig.hasPos && canEdit && (
+          <Kasir
+            unitId={unitId}
+            unitConfig={unitConfig}
+            canEdit={canEdit}
+            onRecordReceipt={handleRecordReceipt}
+            onSettleBooking={handleSettleBooking}
+            paidByBooking={paidByBooking}
+          />
+        )}
+
+        {activeTab === "jadwal" && unitConfig.hasBooking && (
+          <Booking
+            unitId={unitId}
+            bookingGroups={unitConfig.bookingGroups || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+            onBookingDeleted={handleBookingDeleted}
+            onSettleBooking={handleSettleBooking}
+            paidByBooking={paidByBooking}
+          />
+        )}
+
+        {activeTab === "stok" && unitConfig.hasInventory && (
+          <Inventory
+            unitId={unitId}
+            defaultItems={unitConfig.inventoryItems || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+            onRecordExpense={handleRecordExpense}
+          />
+        )}
+
+        {activeTab === "membership" && unitConfig.hasMembership && (
+          <Membership
+            unitId={unitId}
+            membershipClasses={unitConfig.membershipClasses || []}
+            methods={METHODS}
+            canEdit={canEdit}
+            onRecordPayment={handleRecordPayment}
+          />
+        )}
+
+        {activeTab === "payroll" && unitConfig.hasPayroll && (
+          <Payroll
+            unitId={unitId}
+            classCommissionRates={unitConfig.classCommissionRates || {}}
+            canEdit={canEdit}
+          />
+        )}
+
+        {activeTab === "jurnal" && canEdit && (
+          <Jurnal
+            unitId={unitId}
+            unitConfig={unitConfig}
+            canEdit={canEdit}
+            onAudit={logAudit}
+          />
+        )}
+
         <p className="v3-muted" style={{ fontSize: "0.7rem", textAlign: "center", marginTop: "2rem" }}>
-          V3BKS Mini Soccer &amp; Cafe &middot; Samarinda
+          {unitConfig.name} &middot; {unitConfig.tagline}
         </p>
       </div>
 
-      {/* Bottom tab navigation */}
+      {/* Bottom tab navigation — scroll horizontal kalau tab tidak muat (unit dengan 7 tab
+          di HP kecil), label tidak boleh patah 2 baris, plus safe-area untuk iPhone ber-notch */}
       <div
-        className="v3-surface flex items-center"
-        style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 35, borderTop: "1px solid rgba(201,162,39,0.18)", padding: "0.4rem 0.6rem" }}
+        className="v3-surface"
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 35, borderTop: "1px solid rgba(201,162,39,0.18)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
+        <div className="v3-scroll flex items-center" style={{ padding: "0.35rem 0.25rem", overflowX: "auto", maxWidth: 1100, margin: "0 auto" }}>
         {[
           ["dashboard", "Dashboard", LayoutDashboard],
+          ...(unitConfig.hasPos && canEdit ? [["kasir", "Kasir", ShoppingCart]] : []),
+          ...(unitConfig.hasBooking ? [["jadwal", "Jadwal", CalendarDays]] : []),
           ["transaksi", "Transaksi", ListChecks],
           ["laporan", "Laporan", BarChart3],
-          ["ceksaldo", "Cek Saldo", ShieldCheck],
+          ...(unitConfig.hasMembership ? [["membership", "Member", UserCheck]] : []),
+          ...(unitConfig.hasPayroll ? [["payroll", "Payroll", Wallet]] : []),
+          ...(unitConfig.hasInventory ? [["stok", "Stok", Package]] : []),
+          ["ceksaldo", "Saldo", ShieldCheck],
+          ...(canEdit ? [["jurnal", "Jurnal", BookOpen]] : []),
         ].map(([key, label, TabIcon]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className="flex flex-col items-center justify-center"
-            style={{ flex: 1, padding: "0.4rem 0", gap: "0.2rem" }}
+            style={{ flex: "1 0 auto", minWidth: 44, padding: "0.4rem 0.15rem", gap: "0.2rem" }}
+            aria-current={activeTab === key ? "page" : undefined}
           >
             <TabIcon size={19} style={{ color: activeTab === key ? "#C9A227" : "#8A9099" }} />
-            <span style={{ fontSize: "0.65rem", fontWeight: 600, color: activeTab === key ? "#C9A227" : "#8A9099" }}>
+            <span style={{ fontSize: "0.62rem", fontWeight: 600, whiteSpace: "nowrap", color: activeTab === key ? "#C9A227" : "#8A9099" }}>
               {label}
             </span>
           </button>
         ))}
+        </div>
       </div>
 
       {/* AI Assistant dihapus */}
 
-      {/* Mobile FAB */}
-      <button
-        onClick={() => { setEditingTx(null); setShowForm(true); }}
-        className="v3-gold-bg md:hidden flex items-center justify-center"
-        style={{
-          position: "fixed", bottom: "4.6rem", right: "1.2rem", width: 54, height: 54,
-          borderRadius: 999, boxShadow: "0 6px 18px rgba(0,0,0,0.4)", zIndex: 40,
-        }}
-        aria-label="Tambah transaksi"
-      >
-        <Plus size={24} />
-      </button>
+      {/* Mobile FAB — disembunyikan di tab Kasir (bar keranjang memakai posisi sama) dan
+          di tab Cek Saldo (FAB menutupi kolom input saldo aktual sehingga sulit diketik) */}
+      {canEdit && activeTab !== "kasir" && activeTab !== "ceksaldo" && activeTab !== "jurnal" && (
+        <button
+          onClick={() => { setEditingTx(null); setShowForm(true); }}
+          className="v3-gold-bg md:hidden flex items-center justify-center"
+          style={{
+            position: "fixed", bottom: "calc(4.6rem + env(safe-area-inset-bottom))", right: "1.2rem", width: 54, height: 54,
+            borderRadius: 999, boxShadow: "0 6px 18px rgba(0,0,0,0.4)", zIndex: 40,
+          }}
+          aria-label="Tambah transaksi"
+        >
+          <Plus size={24} />
+        </button>
+      )}
 
       {showForm && (
         <TransactionModal
@@ -1991,16 +2610,32 @@ export default function App() {
 
       {confirmDelete && (
         <ConfirmModal
-          message={confirmDelete.type === "reconciliation" ? "Hapus catatan rekonsiliasi ini?" : "Hapus transaksi ini?"}
+          message={
+            confirmDelete.type === "reconciliation"
+              ? "Hapus catatan rekonsiliasi ini?"
+              : transactions.find((t) => t.id === confirmDelete.id)?.bookingId
+              ? "Hapus transaksi ini? Slot di Jadwal yang tertaut ikut terhapus otomatis."
+              : "Hapus transaksi ini?"
+          }
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+
+      {showUserManager && (
+        <UserManager currentUid={authUser?.uid} onClose={() => setShowUserManager(false)} />
+      )}
+
+      {showAudit && (
+        <AuditModal unitId={unitId} unitName={unitConfig.name} onClose={() => setShowAudit(false)} />
+      )}
     </div>
+    </UnitConfigProvider>
   );
 }
 
 function TemplateManager({ templates, onUse, onSave, onDelete, onClose }) {
+  const { methods: METHODS, incomeCategories: INCOME_CATEGORIES, expenseCategories: EXPENSE_CATEGORIES } = useUnitConfig();
   const [showForm, setShowForm] = useState(false);
   const [editingTpl, setEditingTpl] = useState(null);
   const [name, setName] = useState("");
@@ -2196,6 +2831,7 @@ function TemplateManager({ templates, onUse, onSave, onDelete, onClose }) {
 }
 
 function LunasModal({ piutang, onConfirm, onClose }) {
+  const { methods: METHODS, methodMeta: METHOD_META } = useUnitConfig();
   const [date, setDate] = useState(todayISO());
   const [splitMode, setSplitMode] = useState(false);
   const [method, setMethod] = useState(piutang.method || METHODS[0]);
@@ -2360,6 +2996,7 @@ function LunasModal({ piutang, onConfirm, onClose }) {
 }
 
 function CekSaldoTab({ cekSaldoResult, cekSaldoTotalDiff, cekSaldoInputCount, cekSaldoHasSelisih, actuals, setActuals, onSaveRecon, todayStr, reconAnalysis, setReconAnalysis, allTransactions, reconciliations, onPeriksaTransaksi, onSetorTunai }) {
+  const { methodMeta: METHOD_META } = useUnitConfig();
   const [recordedBy, setRecordedBy] = useState("");
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
@@ -2666,6 +3303,7 @@ function BreakEvenCard({ data }) {
     gapBreakEven, gapHealthy,
     hoursToBreakEven, hoursToBreakEvenWD, hoursToBreakEvenWE,
     utilizationPct, progressToBreakEven, progressToStrong,
+    breakevenConfig: BREAKEVEN,
   } = data;
 
   const milestones = [
@@ -2833,9 +3471,10 @@ function BreakEvenCard({ data }) {
 function SummaryChip({ label, value, tone }) {
   const color = tone === "green" ? "#4CAF61" : tone === "red" ? "#D1574A" : "#C9A227";
   return (
-    <div className="v3-surface-alt" style={{ borderRadius: 999, padding: "0.4rem 0.85rem", fontSize: "0.75rem" }}>
-      <span className="v3-muted">{label}: </span>
-      <span className="v3-mono" style={{ color, fontWeight: 600 }}>{formatRupiah(value)}</span>
+    <div className="v3-surface-alt flex items-center gap-2" style={{ borderRadius: 999, padding: "0.4rem 0.9rem 0.4rem 0.8rem", fontSize: "0.75rem" }}>
+      <span style={{ width: 7, height: 7, borderRadius: 999, background: color, flexShrink: 0 }} />
+      <span className="v3-muted">{label}</span>
+      <span className="v3-mono" style={{ color, fontWeight: 700 }}>{formatRupiah(value)}</span>
     </div>
   );
 }
@@ -2874,7 +3513,7 @@ function CategoryBreakdownCard({ title, icon: Icon, data, accent }) {
   );
 }
 
-function TransactionRow({ tx, highlighted, onEdit, onDelete }) {
+function TransactionRow({ tx, highlighted, canEdit = true, onEdit, onDelete }) {
   const isIncome = tx.type === "income";
   const isExpense = tx.type === "expense";
   const isTransfer = tx.type === "transfer";
@@ -2922,7 +3561,7 @@ function TransactionRow({ tx, highlighted, onEdit, onDelete }) {
         transition: "border 0.3s, box-shadow 0.3s",
       }}
     >
-      <div className="flex items-center justify-center" style={{ width: 34, height: 34, borderRadius: 999, background: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
+      <div className="flex items-center justify-center" style={{ width: 36, height: 36, borderRadius: 10, background: color + "1F", flexShrink: 0 }}>
         <Icon size={16} style={{ color }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2938,6 +3577,11 @@ function TransactionRow({ tx, highlighted, onEdit, onDelete }) {
               {tx.category}
             </span>
           )}
+          {tx.bookingId && (
+            <span className="flex items-center gap-1" style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.4rem", borderRadius: 999, background: "rgba(77,127,176,0.18)", color: "#7FB0DD" }} title="Terhubung ke slot di Jadwal — menghapus salah satu ikut menghapus pasangannya">
+              <CalendarDays size={10} /> Jadwal
+            </span>
+          )}
         </div>
         <p className="v3-muted" style={{ fontSize: "0.72rem" }}>
           {tx.date}{!isTransfer && !isPiutangKeluar && !isPiutangBalik && tx.entity ? " · " + tx.entity : ""}
@@ -2949,12 +3593,12 @@ function TransactionRow({ tx, highlighted, onEdit, onDelete }) {
         {tx.note && <p className="v3-muted" style={{ fontSize: "0.72rem", fontStyle: "italic" }}>{tx.note}</p>}
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <p className="v3-mono" style={{ fontWeight: 600, color, fontSize: "0.9rem" }}>
+        <p className="v3-mono" style={{ fontWeight: 700, color, fontSize: "0.92rem" }}>
           {sign}{formatRupiah(tx.amount)}
         </p>
         <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: "0.25rem" }}>
-          <button onClick={onEdit} aria-label="Edit"><Pencil size={13} className="v3-muted" /></button>
-          <button onClick={onDelete} aria-label="Hapus"><Trash2 size={13} className="v3-muted" /></button>
+          {canEdit && <button onClick={onEdit} aria-label="Edit"><Pencil size={13} className="v3-muted" /></button>}
+          {canEdit && <button onClick={onDelete} aria-label="Hapus"><Trash2 size={13} className="v3-muted" /></button>}
         </div>
       </div>
     </div>
@@ -2962,6 +3606,7 @@ function TransactionRow({ tx, highlighted, onEdit, onDelete }) {
 }
 
 function TransactionModal({ editingTx, prefillData, existingPromos, currentBalances, allTransactions, onSave, onClose }) {
+  const { methods: METHODS, incomeCategories: INCOME_CATEGORIES, expenseCategories: EXPENSE_CATEGORIES } = useUnitConfig();
   const src = editingTx || prefillData || {};
   const [type, setType] = useState(src.type || "income");
   const [date, setDate] = useState(src.date || todayISO());
@@ -3457,6 +4102,7 @@ function Field({ label, children }) {
 }
 
 function SettingsModal({ initialBalances, monthlyTarget, recurringCategories, onSave, onClose }) {
+  const { methods: METHODS, expenseCategories: EXPENSE_CATEGORIES, recurringCategories: DEFAULT_RECURRING_CATEGORIES } = useUnitConfig();
   const [vals, setVals] = useState({ ...initialBalances });
   const [target, setTarget] = useState(monthlyTarget || 0);
   const [recurring, setRecurring] = useState(recurringCategories || DEFAULT_RECURRING_CATEGORIES);
@@ -3555,6 +4201,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
 }
 
 function ReconciliationModal({ transactions, initialBalances, onSave, onClose }) {
+  const { methods: METHODS } = useUnitConfig();
   const [date, setDate] = useState(todayISO());
   const [actuals, setActuals] = useState({ Cash: "", BCA: "", Mandiri: "", BNI: "" });
   const [recordedBy, setRecordedBy] = useState("");
@@ -3650,13 +4297,82 @@ function ReconciliationModal({ transactions, initialBalances, onSave, onClose })
   );
 }
 
+// Panel Riwayat Aktivitas (jejak audit) — read-only, khusus Admin. Menampilkan siapa
+// melakukan apa & kapan (500 aktivitas terakhir per unit).
+const AUDIT_TONE = {
+  tambah: { bg: "rgba(76,175,97,0.16)", fg: "#4CAF61", label: "TAMBAH" },
+  ubah: { bg: "rgba(201,162,39,0.16)", fg: "#C9A227", label: "UBAH" },
+  hapus: { bg: "rgba(209,87,74,0.16)", fg: "#D1574A", label: "HAPUS" },
+  pelunasan: { bg: "rgba(77,127,176,0.18)", fg: "#7FB0DD", label: "PELUNASAN" },
+};
+function AuditModal({ unitId, unitName, onClose }) {
+  const [entries, setEntries] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get(auditKeyFor(unitId), true);
+        const parsed = res?.value ? JSON.parse(res.value) : null;
+        setEntries(Array.isArray(parsed?.entries) ? parsed.entries : []);
+      } catch (e) {
+        setEntries([]);
+      }
+    })();
+  }, [unitId]);
+
+  return (
+    <div className="v3-overlay flex items-center justify-center" style={{ position: "fixed", inset: 0, zIndex: 55, padding: "1rem" }}>
+      <div className="v3-surface" style={{ borderRadius: 18, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="flex items-center justify-between" style={{ padding: "1rem 1.2rem", borderBottom: "1px solid rgba(201,162,39,0.15)", position: "sticky", top: 0, background: "#15191D", zIndex: 1 }}>
+          <div>
+            <p className="v3-display" style={{ fontSize: "1rem", fontWeight: 700 }}>Riwayat Aktivitas</p>
+            <p className="v3-muted" style={{ fontSize: "0.68rem" }}>{unitName} · siapa mengubah apa & kapan</p>
+          </div>
+          <button onClick={onClose} aria-label="Tutup"><X size={18} className="v3-muted" /></button>
+        </div>
+        <div style={{ padding: "1rem 1.2rem" }}>
+          {entries === null ? (
+            <div className="flex items-center justify-center" style={{ padding: "2rem 0" }}>
+              <Loader2 className="v3-gold animate-spin" size={22} />
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex flex-col items-center text-center" style={{ padding: "2rem 1rem" }}>
+              <FileText size={26} className="v3-muted" style={{ marginBottom: "0.6rem" }} />
+              <p className="v3-muted" style={{ fontSize: "0.85rem" }}>Belum ada aktivitas tercatat untuk unit ini.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col" style={{ gap: "0.5rem" }}>
+              {entries.map((e) => {
+                const tone = AUDIT_TONE[e.action] || { bg: "rgba(255,255,255,0.06)", fg: "#8A9099", label: (e.action || "").toUpperCase() };
+                const d = new Date(e.ts);
+                const when = d.toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div key={e.id} className="v3-surface-alt flex items-start gap-2.5" style={{ borderRadius: 10, padding: "0.6rem 0.75rem" }}>
+                    <span style={{ flexShrink: 0, marginTop: "0.1rem", fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.04em", padding: "0.15rem 0.45rem", borderRadius: 999, background: tone.bg, color: tone.fg }}>{tone.label}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.3 }}>{e.summary}</p>
+                      <p className="v3-muted" style={{ fontSize: "0.68rem", marginTop: "0.15rem" }}>{when} · oleh {e.user}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="v3-muted" style={{ fontSize: "0.66rem", textAlign: "center", marginTop: "0.4rem" }}>
+                Menampilkan hingga 500 aktivitas terakhir.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const FONT_IMPORTS = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');`;
 
 const CSS = `
 ${FONT_IMPORTS}
 .v3-root { background:#0B0D10; color:#F2EFE9; font-family:'Inter',sans-serif; }
 .v3-display { font-family:'Oswald',sans-serif; }
-.v3-mono { font-family:'IBM Plex Mono',monospace; }
+.v3-mono { font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums; }
 .v3-surface { background:#15191D; border:1px solid rgba(201,162,39,0.14); }
 .v3-surface-alt { background:#1B2025; border:1px solid rgba(255,255,255,0.04); }
 .v3-muted { color:#8A9099; }
@@ -3672,6 +4388,15 @@ ${FONT_IMPORTS}
 .v3-scroll::-webkit-scrollbar-thumb { background:rgba(201,162,39,0.4); border-radius:3px; }
 button { font-family:inherit; }
 *:focus-visible { outline:2px solid #C9A227; outline-offset:2px; }
+*, *::before, *::after { box-sizing: border-box; }
+/* Cegah zoom-otomatis iOS Safari/iPadOS: input dengan font < 16px memicu zoom saat
+   difokus. Paksa semua kolom input jadi 16px di layar HP DAN semua perangkat sentuh
+   (termasuk iPad/tablet, yang dideteksi lewat hover:none + pointer:coarse) — tampilan
+   tetap, hanya teks input yang sedikit lebih besar, sehingga layar tidak tiba-tiba
+   nge-zoom saat mengetik. Desktop (pakai mouse) tidak terpengaruh. */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  input, select, textarea, .v3-input { font-size: 16px !important; }
+}
 @keyframes spin { from { transform:rotate(0deg);} to { transform:rotate(360deg);} }
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
 `;

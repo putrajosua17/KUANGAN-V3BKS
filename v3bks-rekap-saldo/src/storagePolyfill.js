@@ -1,25 +1,13 @@
 // Polyfill ini menggantikan window.storage yang aslinya hanya tersedia di dalam
 // Claude.ai. Data "shared" (shared=true) disimpan di Firebase Realtime Database
-// supaya bisa diakses & diubah bersama oleh siapa pun yang punya link website ini.
-// Data "personal" (shared=false) disimpan di localStorage browser masing-masing
-// orang (tidak terbagi ke orang lain).
+// supaya bisa diakses & diubah bersama oleh siapa pun yang punya akses (lihat aturan
+// keamanan di database.rules.json). Data "personal" (shared=false) disimpan di
+// localStorage browser masing-masing orang (tidak terbagi ke orang lain).
 
-import { initializeApp } from "firebase/app";
+import { app } from "./firebase.js";
 import { getDatabase, ref, get as dbGet, set as dbSet, remove as dbRemove } from "firebase/database";
+import { withTimeout } from "./withTimeout.js";
 
-// GANTI nilai-nilai di bawah ini dengan konfigurasi project Firebase kamu sendiri.
-// Cara mendapatkannya dijelaskan di README.md.
-const firebaseConfig = {
-  apiKey: "AIzaSyC7kR5HqDwYVM4oNcVwFPWraVn4_ejRKlo",
-  authDomain: "keuangan-v3bks.firebaseapp.com",
-  databaseURL: "https://keuangan-v3bks-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "keuangan-v3bks",
-  storageBucket: "keuangan-v3bks.firebasestorage.app",
-  messagingSenderId: "123840405637",
-  appId: "1:123840405637:web:a3cc6859bbb87b31a909ec"
-};
-
-const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 function sanitizeKey(key) {
@@ -34,7 +22,7 @@ window.storage = {
       if (value === null) throw new Error("key not found");
       return { key, value, shared };
     }
-    const snapshot = await dbGet(ref(db, sanitizeKey(key)));
+    const snapshot = await withTimeout(dbGet(ref(db, sanitizeKey(key))));
     if (!snapshot.exists()) throw new Error("key not found");
     return { key, value: snapshot.val(), shared };
   },
@@ -44,7 +32,7 @@ window.storage = {
       localStorage.setItem(key, value);
       return { key, value, shared };
     }
-    await dbSet(ref(db, sanitizeKey(key)), value);
+    await withTimeout(dbSet(ref(db, sanitizeKey(key)), value));
     return { key, value, shared };
   },
 
@@ -53,7 +41,7 @@ window.storage = {
       localStorage.removeItem(key);
       return { key, deleted: true, shared };
     }
-    await dbRemove(ref(db, sanitizeKey(key)));
+    await withTimeout(dbRemove(ref(db, sanitizeKey(key))));
     return { key, deleted: true, shared };
   },
 

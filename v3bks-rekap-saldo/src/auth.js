@@ -1,0 +1,177 @@
+// Semua logika login & manajemen pengguna (Firebase Authentication + profil role
+// di Realtime Database). Ada 3 role:
+//   - "admin"   → akses penuh ke semua unit bisnis + bisa kelola pengguna lain
+//   - "finance" → akses baca/tulis hanya ke unit yang ada di daftar `units`
+//   - "coach"   → akses lihat-saja (read-only) ke unit yang ada di daftar `units`
+//
+// Profil pengguna disimpan di Realtime Database pada path `users/{uid}`:
+//   { name, email, role, units: { "mini-soccer": true, ... } atau { "*": true } untuk admin, createdAt }
+//
+// PENTING: pengecekan role di sini hanya untuk kenyamanan tampilan (UI). Supaya
+// benar-benar aman, terapkan aturan di database.rules.json lewat Firebase Console.
+// Lihat README.md bagian "Setup Keamanan (Auth + Rules)".
+
+import { app } from "./firebase.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+} from "firebase/auth";
+import { initializeApp, deleteApp } from "firebase/app";
+import { getDatabase, ref, get, set, update, remove } from "firebase/database";
+import { withTimeout } from "./withTimeout.js";
+
+export const auth = getAuth(app);
+const db = getDatabase(app);
+
+export function subscribeAuth(callback) {
+  return onAuthStateChanged(auth, callback);
+}
+
+export async function login(email, password) {
+  await withTimeout(signInWithEmailAndPassword(auth, email.trim(), password));
+}
+
+export async function logout() {
+  await signOut(auth);
+}
+
+export async function resetPassword(email) {
+  await withTimeout(sendPasswordResetEmail(auth, email.trim()));
+}
+
+// Dipanggil sekali tiap kali login berhasil. Best-effort saja — kalau gagal (mis. timeout),
+// tidak boleh menghalangi user masuk ke aplikasi, jadi error-nya sengaja ditelan di sini.
+export async function recordLastLogin(uid) {
+  try {
+    await withTimeout(update(ref(db, `users/${uid}`), { lastLoginAt: Date.now() }));
+  } catch {
+    // diamkan — bukan operasi kritis
+  }
+}
+
+export async function getUserProfile(uid) {
+  const snap = await withTimeout(get(ref(db, `users/${uid}`)));
+  return snap.exists() ? snap.val() : null;
+}
+
+// Dicek lewat flag terpisah (bukan membaca isi node "users" secara langsung) supaya
+// pengecekan ini bisa diizinkan untuk pengunjung yang BELUM login lewat security rules
+// (lihat database.rules.json), tanpa membocorkan daftar email pengguna ke publik.
+export async function anyUsersExist() {
+  const snap = await withTimeout(get(ref(db, "system/bootstrapped")));
+  return snap.exists() && snap.val() === true;
+}
+
+export async function listUsers() {
+  const snap = await withTimeout(get(ref(db, "users")));
+  if (!snap.exists()) return [];
+  const val = snap.val();
+  return Object.entries(val).map(([uid, u]) => ({ uid, ...u }));
+}
+
+// Dipakai sekali saja, saat belum ada pengguna sama sekali di sistem (setup awal).
+export async function createFirstAdmin({ email, password, name }) {
+  let cred;
+  try {
+    cred = await withTimeout(createUserWithEmailAndPassword(auth, email.trim(), password));
+  } catch (err) {
+    // Kalau akun auth-nya sudah ada dari percobaan sebelumnya yang gagal di tengah
+    // (profil belum sempat tersimpan), masuk saja dengan kredensial yang sama lalu
+    // lanjutkan menulis profilnya — supaya tidak buntu di "email sudah terdaftar".
+    if ((err?.code || "").includes("email-already-in-use")) {
+      cred = await withTimeout(signInWithEmailAndPassword(auth, email.trim(), password));
+    } else {
+      throw err;
+    }
+  }
+  try {
+    await withTimeout(set(ref(db, `users/${cred.user.uid}`), {
+      name: name.trim(),
+      email: email.trim(),
+      role: "admin",
+      units: { "*": true },
+      createdAt: Date.now(),
+    }));
+    await withTimeout(set(ref(db, "system/bootstrapped"), true));
+  } catch (err) {
+    // Profil admin gagal disimpan — hampir selalu karena aturan keamanan Realtime
+    // Database menolak. Simpan pesannya lalu keluarkan sesi, supaya user TIDAK nyangkut
+    // di layar "Belum ada akses" dan bisa melihat penyebabnya di form login.
+    try { sessionStorage.setItem("v3bks_bootstrap_error", mapAuthError(err)); } catch { /* abaikan */ }
+    try { await signOut(auth); } catch { /* abaikan */ }
+    throw err;
+  }
+  return cred.user;
+}
+
+// Admin membuat akun baru (finance/coach/admin lain) tanpa kehilangan sesi login-nya
+// sendiri. Trik-nya: bikin Firebase App kedua khusus untuk operasi createUser, karena
+// createUserWithEmailAndPassword otomatis login sebagai user baru itu di app instance
+// yang dipakai.
+export async function createUserAsAdmin({ email, password, name, role, units }) {
+  const secondaryApp = initializeApp(app.options, "secondary-" + Date.now());
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    const cred = await withTimeout(createUserWithEmailAndPassword(secondaryAuth, email.trim(), password));
+    await withTimeout(set(ref(db, `users/${cred.user.uid}`), {
+      name: name.trim(),
+      email: email.trim(),
+      role,
+      units,
+      createdAt: Date.now(),
+    }));
+    await signOut(secondaryAuth);
+    return cred.user.uid;
+  } finally {
+    await deleteApp(secondaryApp).catch(() => {});
+  }
+}
+
+export async function updateUserProfile(uid, patch) {
+  await withTimeout(update(ref(db, `users/${uid}`), patch));
+}
+
+// Catatan: ini hanya menghapus profil (role) di Realtime Database. Akun login
+// Firebase Authentication-nya sendiri harus dihapus manual lewat Firebase Console
+// (Authentication > Users) karena client SDK tidak boleh menghapus akun orang lain.
+export async function deleteUserProfile(uid) {
+  await withTimeout(remove(ref(db, `users/${uid}`)));
+}
+
+export function mapAuthError(err) {
+  const code = (err?.code || "").toLowerCase();
+  const msg = (err?.message || "").toLowerCase();
+  // Log lengkap ke console supaya kalau ada error tak terduga masih bisa ditelusuri.
+  try { console.error("[V3BKS auth]", err?.code, err?.message, err); } catch { /* abaikan */ }
+
+  if (code.includes("wrong-password") || code.includes("invalid-credential") || code.includes("invalid-login-credentials")) {
+    return "Email atau password salah.";
+  }
+  if (code.includes("user-not-found")) return "Akun dengan email ini tidak ditemukan.";
+  if (code.includes("email-already-in-use")) return "Email ini sudah terdaftar. Pakai email lain, atau hapus akun lama dulu di Firebase Console (Authentication → Users).";
+  if (code.includes("weak-password")) return "Password minimal 6 karakter.";
+  if (code.includes("invalid-email")) return "Format email tidak valid.";
+  if (code.includes("missing-email")) return "Email wajib diisi.";
+  if (code.includes("too-many-requests")) return "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.";
+  if (code.includes("network-request-failed")) return "Gagal terhubung. Periksa koneksi internet.";
+  // Provider Email/Password belum diaktifkan di Firebase Console.
+  if (code.includes("operation-not-allowed") || code.includes("admin-restricted-operation")) {
+    return "Pembuatan akun via Email/Password belum diaktifkan. Buka Firebase Console → Authentication → Sign-in method → aktifkan Email/Password.";
+  }
+  if (code.includes("configuration-not-found")) {
+    return "Firebase Authentication belum disiapkan. Buka Firebase Console → Authentication → Get started, lalu aktifkan Email/Password.";
+  }
+  // Aturan keamanan Realtime Database menolak penulisan profil.
+  if (code.includes("permission-denied") || code.includes("permission_denied") || msg.includes("permission_denied") || msg.includes("permission denied")) {
+    return "Akun login-nya kemungkinan terbuat, tapi menyimpan profil (role/unit) ditolak aturan keamanan. Pastikan database.rules.json versi terbaru sudah di-Publish di Firebase Console → Realtime Database → Rules, dan akun Anda benar-benar ber-role Admin.";
+  }
+  if (code.includes("timeout") || msg.includes("waktu tunggu")) {
+    return "Waktu tunggu habis. Periksa koneksi internet lalu coba lagi.";
+  }
+  // Error tak terkenal — tampilkan kodenya supaya mudah didiagnosis.
+  return `Gagal: ${err?.code || err?.message || "kesalahan tak terduga"}. Coba lagi, atau kirim pesan error ini untuk dibantu.`;
+}

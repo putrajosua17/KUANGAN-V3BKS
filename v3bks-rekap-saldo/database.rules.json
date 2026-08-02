@@ -1,0 +1,115 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "system": {
+      "bootstrapped": {
+        ".read": true,
+        ".write": "!data.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+
+    "users": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (!root.child('users').exists() && auth.uid === $uid))",
+        "lastLoginAt": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+
+    "v3bks_finance_data__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_templates__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_bookings__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_pos__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_audit__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_journal__mini-soccer": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_finance_data": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_templates": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('mini-soccer').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+
+    "v3bks_finance_data__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_templates__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_bookings__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_inventory__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_pos__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_audit__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_journal__badminton-padel": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('badminton-padel').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+
+    "v3bks_finance_data__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_templates__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_membership__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_payroll__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_pos__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_audit__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    },
+    "v3bks_journal__sports-studio": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true)",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('units').child('sports-studio').val() === true && root.child('users').child(auth.uid).child('role').val() !== 'coach'))"
+    }
+  }
+}
